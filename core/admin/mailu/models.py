@@ -305,6 +305,7 @@ class User(Base, Email):
     """ A user is an email address that has a password to access a mailbox.
     """
     __tablename__ = "user"
+    _credential_cache = {}
 
     domain = db.relationship(Domain,
         backref=db.backref('users', cascade='all, delete-orphan'))
@@ -376,6 +377,17 @@ class User(Base, Email):
         )
 
     def check_password(self, password):
+        cache_result = self._credential_cache.get(self.get_id())
+        current_salt = self.password.split('$')[3] if len(self.password.split('$')) == 5 else None
+        if cache_result and current_salt:
+            cache_salt, cache_hash = cache_result
+            if cache_salt == current_salt:
+                return hash.pbkdf2_sha256.verify(password, cache_hash)
+            else:
+                # the cache is local per gunicorn; the password has changed
+                # so the local cache can be invalidated
+                del self._credential_cache[self.get_id()]
+
         context = self.get_password_context()
         reference = re.match('({[^}]+})?(.*)', self.password).group(2)
         result = context.verify(password, reference)
@@ -383,6 +395,18 @@ class User(Base, Email):
             self.set_password(password)
             db.session.add(self)
             db.session.commit()
+
+        if result:
+            """
+ The credential cache uses a low number of rounds to be fast. While
+it's not meant to be persisted to cold-storage, no additional measures
+are taken to ensure it isn't (mlock(), encrypted swap, ...) on the basis
+that we have little control over GC and string interning anyways.
+
+ An attacker that can dump the process' memory is likely to find credentials
+in clear-text regardless of the presence of the cache.
+            """
+            self._credential_cache[self.get_id()] = (self.password.split('$')[3], hash.pbkdf2_sha256.using(rounds=1).hash(password))
         return result
 
     def set_password(self, password, hash_scheme=None, raw=False):
