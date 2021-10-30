@@ -9,6 +9,17 @@ import srslib
 
 @internal.route("/postfix/dane/<domain_name>")
 def postfix_dane_map(domain_name):
+    # As of 20211030 some Microsoft services have elected to drop
+    # STARTTLS support despite advertising a valid enforcing MTA-STS policy
+    # This tries to fix email delivery for the myriad of domains they operate.
+    try:
+        result = resolver.query(f'{domain_name}', dns.rdatatype.MX, dns.rdataclass.IN, lifetime=10)
+        for record in result:
+            if str(record.exchange).endswith('.olc.protection.outlook.com.'):
+                return flask.jsonify('may')
+    except: # It's fine if we fail; postfix will retry
+        pass
+    ### end of workaround
     return flask.jsonify('dane-only') if utils.has_dane_record(domain_name) else flask.abort(404)
 
 @internal.route("/postfix/domain/<domain_name>")
