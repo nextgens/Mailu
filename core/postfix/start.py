@@ -71,6 +71,8 @@ for map_file in glob.glob("/overrides/*.map"):
     os.system("postmap {}".format(destination))
     os.remove(destination)
 
+shutil.copyfile("/conf/recipient_access.pcre", "/etc/postfix/recipient_access.pcre")
+
 if os.path.exists("/overrides/mta-sts-daemon.yml"):
     shutil.copyfile("/overrides/mta-sts-daemon.yml", "/etc/mta-sts-daemon.yml")
 else:
