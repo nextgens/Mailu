@@ -26,16 +26,13 @@ STATUSES = {
     }),
 }
 
-WEBMAIL_PORTS = ['10143', '10025']
-
 def check_credentials(user, password, ip, protocol=None, auth_port=None):
-    if not user or not user.enabled or (protocol == "imap" and not user.enable_imap and not auth_port in WEBMAIL_PORTS) or (protocol == "pop3" and not user.enable_pop):
+    if password.startswith('token-'): # only used internally in SSO/webmails
+        if utils.verify_temp_token(user.get_id(), password):
+            return True
+    if not user or not user.enabled or (protocol == "imap" and not user.enable_imap) or (protocol == "pop3" and not user.enable_pop):
         return False
     is_ok = False
-    # webmails
-    if auth_port in WEBMAIL_PORTS or auth_port == '4190' and password.startswith('token-'):
-        if utils.verify_temp_token(user.get_id(), password):
-            is_ok = True
     if not is_ok and utils.is_app_token(password):
         for token in user.tokens:
             if (token.check_password(password) and
@@ -53,9 +50,9 @@ def handle_authentication(headers):
     method = headers["Auth-Method"].lower()
     protocol = headers["Auth-Protocol"].lower()
     # Incoming mail, no authentication
-    if method == "none" and protocol == "smtp":
+    if method in ['none', ''] and protocol in ['smtp', 'lmtp']:
         server, port = get_server(protocol, False)
-        if app.config["INBOUND_TLS_ENFORCE"]:
+        if app.config["INBOUND_TLS_ENFORCE"]: # FIXME:
             if "Auth-SSL" in headers and headers["Auth-SSL"] == "on":
                 return {
                     "Auth-Status": "OK",
@@ -76,7 +73,7 @@ def handle_authentication(headers):
                 "Auth-Port": port
             }
     # Authenticated user
-    elif method == "plain":
+    elif method in ['plain', 'login']:
         is_valid_user = False
         # According to RFC2616 section 3.7.1 and PEP 3333, HTTP headers should
         # be ASCII and are generally considered ISO8859-1. However when passing
@@ -121,7 +118,7 @@ def handle_authentication(headers):
             "Auth-Wait": 0
         }
     # Unexpected
-    raise Exception("SHOULD NOT HAPPEN")
+    raise Exception(f"SHOULD NOT HAPPEN {protocol} {method}")
 
 
 def get_status(protocol, status):
@@ -140,6 +137,10 @@ def get_server(protocol, authenticated=False):
             hostname, port = app.config['SMTP_ADDRESS'], 10025
         else:
             hostname, port = app.config['SMTP_ADDRESS'], 25
+    elif protocol == "submission":
+        hostname, port = app.config['SMTP_ADDRESS'], 10025
+    elif protocol == "lmtp":
+        hostname, port = app.config['IMAP_ADDRESS'], 2525
     elif protocol == "sieve":
         hostname, port = app.config['IMAP_ADDRESS'], 4190
     try:

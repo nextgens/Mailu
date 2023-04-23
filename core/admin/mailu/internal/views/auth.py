@@ -20,7 +20,7 @@ def nginx_authentication():
         response.headers['Auth-Error-Code'] = '502 5.5.1'
         utils.limiter.rate_limit_ip(client_ip)
         return response
-    is_from_webmail = headers['Auth-Port'] in ['10143', '10025']
+    is_from_webmail = 'Auth-Pass' in headers and headers['Auth-Pass'].startswith('token-')
     is_app_token = utils.is_app_token(headers.get('Auth-Pass',''))
     if not is_from_webmail and not is_port_25 and not is_app_token and utils.limiter.should_rate_limit_ip(client_ip):
         status, code = nginx.get_status(flask.request.headers['Auth-Protocol'], 'ratelimit')

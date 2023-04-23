@@ -16,7 +16,10 @@ function auth_passdb_lookup(req)
   }
   auth_request:add_header('Auth-Port', req.local_port)
   auth_request:add_header('Auth-User', req.user)
-  auth_request:add_header('Auth-Pass', req.password)
+  if req.password ~= nil
+  then
+    auth_request:add_header('Auth-Pass', req.password)
+  end
   auth_request:add_header('Auth-Protocol', req.service)
   auth_request:add_header('Client-IP', req.remote_ip)
   auth_request:add_header('Client-Port', req.remote_port)
