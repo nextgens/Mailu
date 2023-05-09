@@ -26,13 +26,16 @@ STATUSES = {
     }),
 }
 
+WEBMAIL_PORTS = ['14190', '10143', '10025']
+
 def check_credentials(user, password, ip, protocol=None, auth_port=None):
-    if password.startswith('token-'): # only used internally in SSO/webmails
-        if utils.verify_temp_token(user.get_id(), password):
-            return True
     if not user or not user.enabled or (protocol == "imap" and not user.enable_imap) or (protocol == "pop3" and not user.enable_pop):
         return False
     is_ok = False
+    # webmails
+    if auth_port in WEBMAIL_PORTS and password.startswith('token-'):
+        if utils.verify_temp_token(user.get_id(), password):
+            return True
     if not is_ok and utils.is_app_token(password):
         for token in user.tokens:
             if (token.check_password(password) and

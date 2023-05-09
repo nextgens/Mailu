@@ -38,7 +38,7 @@ $config['smtp_conn_options'] = array(
 );
 
 // Sieve script management
-$config['managesieve_host'] = 'tls://{{ FRONT_ADDRESS or "front" }}:4190';
+$config['managesieve_host'] = 'tls://{{ FRONT_ADDRESS or "front" }}:14190';
 $config['managesieve_conn_options'] = array(
   'ssl'         => array(
      'verify_peer'  => false,
