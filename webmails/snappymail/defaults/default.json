@@ -2,7 +2,7 @@
     "name": "*",
     "IMAP": {
         "host": "{{ FRONT_ADDRESS }}",
-        "port": 143,
+        "port": 10143,
         "type": 2,
         "shortLogin": false,
         "ssl": {
@@ -16,7 +16,7 @@
     },
     "SMTP": {
         "host": "{{ FRONT_ADDRESS }}",
-        "port": 587,
+        "port": 10587,
         "secure": 2,
         "shortLogin": false,
         "ssl": {
