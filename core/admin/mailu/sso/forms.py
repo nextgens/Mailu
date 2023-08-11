@@ -10,3 +10,7 @@ class LoginForm(flask_wtf.FlaskForm):
     pwned = fields.HiddenField(label='', default=-1)
     submitWebmail = fields.SubmitField(_('Sign in'))
     submitAdmin = fields.SubmitField(_('Sign in'))
+
+class TOTPForm(flask_wtf.FlaskForm):
+    code = fields.StringField(_('Current TOTP code'), [validators.DataRequired()])
+    submit = fields.SubmitField(_('Sign in'))

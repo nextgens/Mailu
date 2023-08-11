@@ -1,0 +1,23 @@
+{%- extends "form.html" %}
+
+{%- block title %}
+{% trans %}Create a TOTP{% endtrans %}
+{%- endblock %}
+
+{%- block subtitle %}
+{{ user }}
+{%- endblock %}
+
+{%- block content %}
+<form class="form" method="post" role="form">
+{{ form.hidden_tag() }}
+{%- call macros.card(title="Generate a new Key") %}
+{{ macros.form_field(form.displayed_b32secret) }}
+<a href="{{url_data}}">{{url_data}}</a><br>
+<img id="qrcode" src="data:image/jpeg;base64,{{ img_data }}">
+{{ macros.form_field(form.comment) }}
+{{ macros.form_field(form.displayed_verify) }}
+{{ macros.form_field(form.submit) }}
+{%- endcall %}
+</form>
+{%- endblock %}

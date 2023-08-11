@@ -145,6 +145,19 @@ class UserReplyForm(flask_wtf.FlaskForm):
     reply_enddate = fields.DateField(_('End of vacation'))
     submit = fields.SubmitField(_('Update'))
 
+class TOTPForm(flask_wtf.FlaskForm):
+    displayed_b32secret = fields.StringField(
+        _('Your secret key (write it down, as it will never be displayed again)')
+    )
+    displayed_url = fields.StringField(
+        _('Your TOTP import URL')
+    )
+    b32secret = fields.HiddenField([validators.DataRequired()])
+    comment = fields.StringField(_('Name of the device the TOTP is stored on'))
+    displayed_verify = fields.StringField(
+        _('Verification code')
+    )
+    submit = fields.SubmitField(_('Save'))
 
 class TokenForm(flask_wtf.FlaskForm):
     displayed_password = fields.StringField(

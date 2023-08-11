@@ -519,6 +519,18 @@ def gen_temp_token(email, session):
     )
     return token
 
+# This is used to ensure we don't allow twice the same TOTP
+
+def TOTP_block(email, code):
+    app.session_store.put(f'TOTP-{email}-{code}', 1, 600)
+
+def is_TOTP_block(email, code):
+    try:
+        if app.session_store.get(f'TOTP-{email}-{code}'):
+            return True
+    except:
+        pass
+
 def isBadOrPwned(form):
     try:
         if len(form.pw.data) < 8:

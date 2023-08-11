@@ -28,7 +28,9 @@ mysql-connector-python
 passlib
 psycopg2-binary
 Pygments
+pyotp
 PyYAML
+qrcode
 redis
 SQLAlchemy
 srslib

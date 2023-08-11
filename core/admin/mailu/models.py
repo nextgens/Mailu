@@ -719,6 +719,15 @@ class Alias(Base, Email):
 
         return None
 
+class TOTP(Base):
+    __tablename__ = 'totp'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_email = db.Column(db.String(255), db.ForeignKey(User.email),
+        nullable=False)
+    user = db.relationship(User,
+        backref=db.backref('totps', cascade='all, delete-orphan'))
+    b32secret = db.Column(db.String(16), nullable=False)
 
 class Token(Base):
     """ A token is an application password for a given user.

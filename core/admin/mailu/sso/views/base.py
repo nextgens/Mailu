@@ -3,7 +3,10 @@ from mailu import models, utils
 from mailu.sso import sso, forms
 from mailu.ui import access
 
+from pyotp import totp
+
 from flask import current_app as app
+from flask_babel import lazy_gettext as _
 import flask
 import flask_login
 import secrets
@@ -52,19 +55,31 @@ def login():
                 return flask.render_template('login.html', form=form, fields=fields)
         user = models.User.login(username, form.pw.data)
         if user:
-            flask.session.regenerate()
-            flask_login.login_user(user)
+            if second_factor_required := any(user.totps):
+                flask.session['redirect_to'] = destination
+                flask.session['candidate_uid'] = username
+                destination = flask.url_for('sso.second_factor')
+            elif True: #user.require_2fa:
+                flask.flash(_('Your administrator would like you to setup two factor authentication!'), 'warning')
+                flask.session['redirect_to'] = destination
+                destination = flask.url_for('ui.totp_create')
             response = flask.redirect(destination)
             response.set_cookie('rate_limit', utils.limiter.device_cookie(username), max_age=31536000, path=flask.url_for('sso.login'), secure=app.config['SESSION_COOKIE_SECURE'], httponly=True)
             flask.current_app.logger.info(f'Login attempt for: {username}/sso/{flask.request.headers.get("X-Forwarded-Proto")} from: {client_ip}/{client_port}: success: password: {form.pwned.data}')
             if msg := utils.isBadOrPwned(form):
                 flask.flash(msg, "error")
-            return response
+            return _login(user, response, second_factor_required)
         else:
             utils.limiter.rate_limit_user(username, client_ip, device_cookie, device_cookie_username, form.pw.data) if models.User.get(username) else utils.limiter.rate_limit_ip(client_ip, username)
             flask.current_app.logger.info(f'Login attempt for: {username}/sso/{flask.request.headers.get("X-Forwarded-Proto")} from: {client_ip}/{client_port}: failed: badauth: {utils.truncated_pw_hash(form.pw.data)}')
             flask.flash('Wrong e-mail or password', 'error')
     return flask.render_template('login.html', form=form, fields=fields)
+
+def _login(user, response, second_factor_required=False):
+    flask.session.regenerate()
+    if not second_factor_required:
+        flask_login.login_user(user)
+    return response
 
 @sso.route('/logout', methods=['GET'])
 @access.authenticated
@@ -137,3 +152,25 @@ def _proxy():
     user.send_welcome()
     flask.current_app.logger.info(f'Login succeeded by proxy created user: {user} from {client_ip} through {flask.request.remote_addr}.')
     return flask.redirect(url)
+
+@sso.route('/second_factor', methods=['GET','POST'])
+def second_factor():
+    uid = flask.session.get('candidate_uid')
+    form = forms.TOTPForm()
+    if form.validate_on_submit() and uid:
+        current_attempt = flask.session.get('attempt', 0)
+        if current_attempt > 5 or utils.is_TOTP_block(uid, form.code.data):
+            flask.session.destroy()
+            return flask.redirect(flask.url_for('.login'))
+        user = models.User.query.get(uid)
+        for otp in user.totps:
+            v = totp.TOTP(otp.b32secret)
+            if v.verify(form.code.data, valid_window=1):
+                utils.TOTP_block(uid, form.code.data)
+                response = flask.redirect(flask.session.pop('redirect_to'))
+                flask.session.pop('candidate_uid')
+                flask.session.pop('attempt', None)
+                return _login(user, response)
+        flask.session['attempt'] = current_attempt + 1
+        flask.flash(_('Invalid TOTP code!'), 'error')
+    return flask.render_template('second_factor.html', form=form)

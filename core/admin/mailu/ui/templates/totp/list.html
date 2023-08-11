@@ -1,0 +1,38 @@
+{%- extends "base.html" %}
+
+{%- block title %}
+{% trans %}TOTP{% endtrans %}
+{%- endblock %}
+
+{%- block subtitle %}
+{{ user }}
+{%- endblock %}
+
+{%- block main_action %}
+<a class="btn btn-primary float-right" href="{{ url_for('.totp_create', user_email=user.email) }}">{% trans %}New TOTP{% endtrans %}</a>
+{%- endblock %}
+
+{%- block content %}
+{%- call macros.table(order='[[2,"asc"]]') %}
+<thead>
+  <tr>
+    <th data-orderable="false">{% trans %}Actions{% endtrans %}</th>
+    <th>{% trans %}ID{% endtrans %}</th>
+    <th>{% trans %}Comment{% endtrans %}</th>
+    <th>{% trans %}Created{% endtrans %}</th>
+  </tr>
+</thead>
+<tbody>
+  {%- for totp in user.totps %}
+  <tr>
+    <td>
+      <a href="{{ url_for('.totp_delete', totp_id=totp.id) }}" title="{% trans %}Delete{% endtrans %}"><i class="fa fa-trash"></i></a>
+    </td>
+    <td>{{ totp.id }}</td>
+    <td>{{ totp.comment }}</td>
+    <td data-sort="{{ totp.created_at or '0000-00-00' }}">{{ totp.created_at | format_date }}</td>
+  </tr>
+  {%- endfor %}
+</tbody>
+{%- endcall %}
+{%- endblock %}
