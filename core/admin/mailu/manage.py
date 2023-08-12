@@ -80,7 +80,8 @@ def admin(localpart, domain_name, password, mode):
         user = models.User(
             localpart=localpart,
             domain=domain,
-            global_admin=True
+            global_admin=True,
+            require_2fa=app.config['CREDENTIAL_2FA_DEFAULT']
         )
         db.session.add(user)
         user.set_password(password)
@@ -103,7 +104,8 @@ def user(localpart, domain_name, password):
     user = models.User(
         localpart=localpart,
         domain=domain,
-        global_admin=False
+        global_admin=False,
+        require_2fa=app.config['CREDENTIAL_2FA_DEFAULT']
     )
     user.set_password(password)
     db.session.add(user)
