@@ -59,8 +59,8 @@ def login():
                 flask.session['redirect_to'] = destination
                 flask.session['candidate_uid'] = username
                 destination = flask.url_for('sso.second_factor')
-            elif True: #user.require_2fa:
-                flask.flash(_('Your administrator would like you to setup two factor authentication!'), 'warning')
+            elif user.require_2fa:
+                flask.flash(_('Your administrator requests that you setup two factor authentication!'), 'info')
                 flask.session['redirect_to'] = destination
                 destination = flask.url_for('ui.totp_create')
             response = flask.redirect(destination)

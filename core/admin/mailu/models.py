@@ -500,6 +500,7 @@ class User(Base, Email):
     quota_bytes_used = db.Column(db.BigInteger, nullable=False, default=0)
     global_admin = db.Column(db.Boolean, nullable=False, default=False)
     enabled = db.Column(db.Boolean, nullable=False, default=True)
+    require_2fa = db.Column(db.Boolean, nullable=False, default=False)
 
     # Features
     enable_imap = db.Column(db.Boolean, nullable=False, default=True)

@@ -25,7 +25,8 @@ def upgrade():
     sa.ForeignKeyConstraint(['user_email'], ['user.email'], name=op.f('totp_user_email_fkey')),
     sa.PrimaryKeyConstraint('id', name=op.f('totp_pkey'))
     )
-
+    op.add_column('user', sa.Column('require_2fa', sa.Boolean(), nullable=False, server_default=sa.sql.expression.false()))
 
 def downgrade():
     op.drop_table('totp')
+    op.drop_column('user', 'require_2fa')

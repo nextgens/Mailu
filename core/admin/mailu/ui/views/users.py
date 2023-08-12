@@ -182,6 +182,7 @@ def user_signup(domain_name=None):
             user = models.User(domain=domain)
             form.populate_obj(user)
             user.set_password(form.pw.data)
+            user.require_2fa = app.config['CREDENTIAL_2FA_DEFAULT']
             user.quota_bytes = quota_bytes
             models.db.session.add(user)
             models.db.session.commit()

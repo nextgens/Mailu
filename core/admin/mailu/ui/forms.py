@@ -99,6 +99,7 @@ class UserForm(flask_wtf.FlaskForm):
     displayed_name = fields.StringField(_('Displayed name'))
     comment = fields.StringField(_('Comment'))
     enabled = fields.BooleanField(_('Enabled'), default=True)
+    require_2fa = fields.BooleanField(_('Enforce two factor authentication'), default=True)
     submit = fields.SubmitField(_('Save'))
 
 
