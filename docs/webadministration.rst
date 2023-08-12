@@ -17,6 +17,8 @@ It offers the following configuration options:
 
 * configure fetchmail for automatic email retrieval (from 3rd-party servers).
 
+* configure two factor authentication.
+
 * configure application passwords.
 
 * send broadcast messages to all users.
@@ -178,8 +180,21 @@ After saving the application token it is not possible anymore to view the unique
 
 The comment field can be used to enter a description for the authentication token. For example the name of the application the application token is created for.
 
-In the Authorized IP field a comma separated list of white listed IP addresses or networks can be entered. When the field is set, the application token can only be used when the IP address of the client matches what is in the field.
-When no IP address is entered, there is no restriction on IP address.
+In the Authorized IP field a comma separated list where white listed IP addresses or networks can be entered. When the field is set, the application token can only be used from an IP address matching what is in the list. When no IP address is entered, there is no IP address restriction and the token can be used from anywhere.
+
+Authentication tokens are high entropy and therefore exempt from rate-limiting. We strongly recommend that all "fat clients" are configured to use one instead of the main account credentials.
+
+Two factor authentication (TOTP)
+--------------------------------
+
+On the `two factor authentication` page, new TOTPs (RFC 6238) can be created.
+The purpose of two factor authentication via Time Based One Time Passwords (TOTP) is to create ephemeral credentials that the user will have to provide to authenticate. By requiring "something the user has" on top of "something the user knows", system administrators can mitigate threats posed by traditional password-based authentication.
+
+By clicking on the New token button on the top right of the page, a new TOTP can be created. We recommend that you refrain from copying TOTPs accross devices and generate a new one for each.
+
+The comment field can be used to enter a description of where the TOTP token is configured.
+
+Users can configure the TOTP generator of their choice on their phones. One of such applications is Google Authenticator and it can be downloaded from https://support.google.com/accounts/answer/1066447
 
 
 Announcement
