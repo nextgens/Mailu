@@ -41,6 +41,7 @@ user_fields_post = api.model('UserCreate', {
     'quota_bytes': fields.Integer(description='The maximum quota for the user’s email box in bytes', example='1000000000'),
     'global_admin': fields.Boolean(description='Make the user a global administrator'),
     'enabled': fields.Boolean(description='Enable the user. When an user is disabled, the user is unable to login to the Admin GUI or webmail or access his email via IMAP/POP3 or send mail'),
+    'require_2fa': fields.Boolean(description='Require two factor authentication'),
     'enable_imap': fields.Boolean(description='Allow email retrieval via IMAP'),
     'enable_pop': fields.Boolean(description='Allow email retrieval via POP3'),
     'allow_spoofing': fields.Boolean(description='Allow the user to spoof the sender (send email as anyone)'),
@@ -64,6 +65,7 @@ user_fields_put = api.model('UserUpdate', {
     'quota_bytes': fields.Integer(description='The maximum quota for the user’s email box in bytes', example='1000000000'),
     'global_admin': fields.Boolean(description='Make the user a global administrator'),
     'enabled': fields.Boolean(description='Enable the user. When an user is disabled, the user is unable to login to the Admin GUI or webmail or access his email via IMAP/POP3 or send mail'),
+    'require_2fa': fields.Boolean(description='Require two factor authentication'),
     'enable_imap': fields.Boolean(description='Allow email retrieval via IMAP'),
     'enable_pop': fields.Boolean(description='Allow email retrieval via POP3'),
     'allow_spoofing': fields.Boolean(description='Allow the user to spoof the sender (send email as anyone)'),
@@ -206,6 +208,8 @@ class User(Resource):
             user_found.global_admin = data['global_admin']
         if 'enabled' in data:
             user_found.enabled = data['enabled']
+        if 'require_2fa' in data:
+            user_new.require_2fa = data['require_2fa']
         if 'enable_imap' in data:
             user_found.enable_imap = data['enable_imap']
         if 'enable_pop' in data:
