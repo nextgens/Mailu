@@ -15,7 +15,7 @@ permissions: {}
 # REQUIRED global variables
 # DOCKER_ORG, docker org used for pushing images.
 env:
-  DOCKER_ORG: ghcr.io/mailu
+  DOCKER_ORG: ghcr.io/nextgens
 
 jobs:
 # This job calculates all global job variables that are required by all the subsequent jobs.
