@@ -116,6 +116,8 @@ def create_app_from_config(config):
     app.register_blueprint(internal.internal, url_prefix='/internal')
     app.register_blueprint(sso.sso, url_prefix='/sso')
     api.register(app, web_api_root=app.config.get('WEB_API'))
+    from mailu.auth_flow import enforce_pending_actions
+    app.before_request(enforce_pending_actions)
     return app
 
 
@@ -124,4 +126,3 @@ def create_app():
     """
     config = configuration.ConfigManager()
     return create_app_from_config(config)
-
