@@ -1,20 +1,21 @@
 name: mergify-queue
 on:
-  pull_request:
+  push:
     branches:
-      - master
-      - '2024.06'
-    types:
-      - opened
-      - reopened
-      - synchronize
+      - 'mergify/merge-queue/**'
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: read
 
 jobs:
   derive-variables:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
     runs-on: ubuntu-latest
     outputs:
       docker_org: ${{ steps.owner.outputs.lowercase }}
+      pull_request_number: ${{ steps.pull-request.outputs.number }}
+      base_branch: ${{ steps.pull-request.outputs.base_branch }}
     steps:
       - name: Convert repository owner to lowercase
         id: owner
@@ -22,23 +23,41 @@ jobs:
         with:
           string: ${{ github.repository_owner }}
 
+      - name: Find the queue pull request
+        id: pull-request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          QUEUE_BRANCH: ${{ github.ref_name }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          pull_request=$(gh api --method GET "repos/$REPOSITORY/pulls" \
+            -f state=open \
+            -f head="$REPOSITORY_OWNER:$QUEUE_BRANCH" \
+            --jq '.[0] | [.number, .base.ref] | @tsv')
+          IFS=$'\t' read -r number base_branch <<< "$pull_request"
+          test -n "$number" && test -n "$base_branch"
+          printf 'number=%s\n' "$number" >> "$GITHUB_OUTPUT"
+          printf 'base_branch=%s\n' "$base_branch" >> "$GITHUB_OUTPUT"
+
   build-test-deploy:
     needs:
       - derive-variables
     uses: ./.github/workflows/build_test_deploy.yml
     with:
       architecture: 'linux/amd64,linux/arm64/v8,linux/arm/v7'
-      mailu_version: pr-${{ github.event.pull_request.number }}
-      pinned_mailu_version: ${{ github.event.pull_request.head.sha }}
+      mailu_version: pr-${{ needs.derive-variables.outputs.pull_request_number }}
+      pinned_mailu_version: ${{ github.sha }}
       docker_org: ghcr.io/${{ needs.derive-variables.outputs.docker_org }}
-      branch: ${{ github.event.pull_request.base.ref }}
+      branch: ${{ needs.derive-variables.outputs.base_branch }}
       deploy: 'false'
       release: 'false'
     secrets: inherit
 
   ci-success:
     name: CI-Done
-    if: always() && startsWith(github.head_ref, 'mergify/merge-queue/')
+    if: always()
     needs:
       - derive-variables
       - build-test-deploy

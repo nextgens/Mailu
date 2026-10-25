@@ -186,6 +186,12 @@ pull requests together with the latest version of the target branch before fast-
 A pull request needs the required approvals and a successful ``CI-Done`` check before it can merge. The approval policy
 is one review for trusted authors, unless ``review/need2`` is set, and two reviews for everyone else.
 
+Pull requests from authors GitHub identifies as ``OWNER``, ``MEMBER``, ``COLLABORATOR`` or
+``CONTRIBUTOR`` are queued automatically for CI. For other authors, a reviewer can request the same
+queue test by adding the ``queue-for-ci`` label. This only starts testing; the regular review count
+is still required to merge. The Mergify queue command remains restricted to administrators so that
+reviewers cannot select the review-bypass queue.
+
 The merge queue creates a temporary draft pull request for each batch. Its GitHub Actions run builds and
 tests the combined changes and publishes test images to the GitHub Container Registry. To test an image,
 find the active draft pull request whose title begins with ``merge queue:`` and use its PR number:

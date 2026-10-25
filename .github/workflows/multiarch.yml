@@ -135,7 +135,7 @@ jobs:
       Docker_Password2: ${{ secrets.Docker_Password2 }}
       Release_Token: ${{ secrets.Release_Token }}
 
- # This job is watched by bors. It only complets if building,testing and deploy worked.
+ # This check confirms the build, test, and deployment jobs completed successfully.
   ci-success:
     name: CI-Done
     #Returns true when none of the **previous** steps have failed or have been canceled.

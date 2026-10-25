@@ -1,0 +1,51 @@
+name: mergify-contributor-label
+on:
+  pull_request_target:
+    branches:
+      - master
+      - '2024.06'
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  issues: write
+
+jobs:
+  classify-author:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add queue labels when needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+        run: |
+          set -euo pipefail
+
+          ensure_label() {
+            local name="$1"
+            if ! gh api "repos/$REPOSITORY/labels/$name" >/dev/null 2>&1; then
+              gh api --method POST "repos/$REPOSITORY/labels" \
+                -f "name=$name" -f color=1d76db \
+                -f "description=Queue control managed by Mergify automation" >/dev/null
+            fi
+          }
+
+          ensure_label known-contributor
+          ensure_label queue-for-ci
+
+          case "$AUTHOR_ASSOCIATION" in
+            OWNER|MEMBER|COLLABORATOR|CONTRIBUTOR)
+              gh api --method POST "repos/$REPOSITORY/issues/$PR_NUMBER/labels" \
+                -f 'labels[]=known-contributor' >/dev/null
+              ;;
+            *)
+              gh api --method DELETE \
+                "repos/$REPOSITORY/issues/$PR_NUMBER/labels/known-contributor" \
+                >/dev/null 2>&1 || true
+              ;;
+          esac

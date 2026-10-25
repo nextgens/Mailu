@@ -61,6 +61,18 @@ pull_request_rules:
   - name: Queue master PRs for integration testing
     conditions:
       - base=master
+      - label=known-contributor
+      - -draft
+      - -title~=(WIP|wip)
+      - -label~=^(status/wip|status/blocked)$
+    actions:
+      queue:
+        name: master
+
+  - name: Queue master PRs requested by reviewers
+    conditions:
+      - base=master
+      - label=queue-for-ci
       - -draft
       - -title~=(WIP|wip)
       - -label~=^(status/wip|status/blocked)$
@@ -71,6 +83,18 @@ pull_request_rules:
   - name: Queue 2024.06 PRs for integration testing
     conditions:
       - base=2024.06
+      - label=known-contributor
+      - -draft
+      - -title~=(WIP|wip)
+      - -label~=^(status/wip|status/blocked)$
+    actions:
+      queue:
+        name: '2024.06'
+
+  - name: Queue 2024.06 PRs requested by reviewers
+    conditions:
+      - base=2024.06
+      - label=queue-for-ci
       - -draft
       - -title~=(WIP|wip)
       - -label~=^(status/wip|status/blocked)$
