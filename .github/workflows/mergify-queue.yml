@@ -31,7 +31,7 @@ jobs:
       pinned_mailu_version: ${{ github.event.pull_request.head.sha }}
       docker_org: ghcr.io/${{ needs.derive-variables.outputs.docker_org }}
       branch: master
-      deploy: 'true'
+      deploy: 'false'
       release: 'false'
     secrets: inherit
 

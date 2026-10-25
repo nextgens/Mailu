@@ -193,7 +193,7 @@ find the active draft pull request whose title begins with ``merge queue:`` and 
 .. code-block:: bash
 
   export DOCKER_ORG="ghcr.io/mailu"
-  export MAILU_VERSION="pr-<queue-pr-number>"
+  export MAILU_VERSION="pr-<queue-pr-number>-build"
   docker compose pull
   docker compose up -d
 
