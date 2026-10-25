@@ -8,6 +8,12 @@ queue_rules:
       - -label~=^(status/wip|status/blocked)$
     merge_conditions:
       - check-success=CI-Done
+      - or:
+          - and:
+              - author~=^(mergify|kaiyou|muhlemmer|mildred|HorayNarea|hoellen|ofthesun9|Nebukadneza|micw|lub|Diman0|ghostwheel42|nextgens)$
+              - -label=review/need2
+              - "#approved-reviews-by>=1"
+          - "#approved-reviews-by>=2"
 
   - name: '2024.06'
     batch_size: 5
@@ -18,6 +24,12 @@ queue_rules:
       - -label~=^(status/wip|status/blocked)$
     merge_conditions:
       - check-success=CI-Done
+      - or:
+          - and:
+              - author~=^(mergify|kaiyou|muhlemmer|mildred|HorayNarea|hoellen|ofthesun9|Nebukadneza|micw|lub|Diman0|ghostwheel42|nextgens)$
+              - -label=review/need2
+              - "#approved-reviews-by>=1"
+          - "#approved-reviews-by>=2"
 
   # Allows an administrator to bypass the review count while keeping CI required.
   - name: admin-override
@@ -52,12 +64,6 @@ pull_request_rules:
       - -draft
       - -title~=(WIP|wip)
       - -label~=^(status/wip|status/blocked)$
-      - or:
-          - and:
-              - author~=^(mergify|kaiyou|muhlemmer|mildred|HorayNarea|hoellen|ofthesun9|Nebukadneza|micw|lub|Diman0|ghostwheel42|nextgens)$
-              - -label=review/need2
-              - "#approved-reviews-by>=1"
-          - "#approved-reviews-by>=2"
     actions:
       queue:
         name: master
@@ -68,12 +74,6 @@ pull_request_rules:
       - -draft
       - -title~=(WIP|wip)
       - -label~=^(status/wip|status/blocked)$
-      - or:
-          - and:
-              - author~=^(mergify|kaiyou|muhlemmer|mildred|HorayNarea|hoellen|ofthesun9|Nebukadneza|micw|lub|Diman0|ghostwheel42|nextgens)$
-              - -label=review/need2
-              - "#approved-reviews-by>=1"
-          - "#approved-reviews-by>=2"
     actions:
       queue:
         name: '2024.06'
