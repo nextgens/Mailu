@@ -181,9 +181,9 @@ In the case of a PR from a fellow team member, a single review is enough
 to initiate merging. In all other cases, two approving reviews are required.
 There is also a possibility to set the ``review/need2`` to require a second review.
 
-Mergify's merge queue adds eligible pull requests to an integration queue. It tests batches of up to five
-pull requests together with the latest ``master`` before fast-forwarding a successful batch. A pull request
-needs the required approvals and a successful ``CI-Done`` check before it can merge. The approval policy
+Mergify has separate integration queues for ``master`` and ``2024.06``. It tests batches of up to five
+pull requests together with the latest version of the target branch before fast-forwarding a successful batch.
+A pull request needs the required approvals and a successful ``CI-Done`` check before it can merge. The approval policy
 is one review for trusted authors, unless ``review/need2`` is set, and two reviews for everyone else.
 
 The merge queue creates a temporary draft pull request for each batch. Its GitHub Actions run builds and
@@ -205,6 +205,12 @@ Administrators can bypass the review count for an exceptional merge by commentin
 .. code-block:: text
 
   @mergifyio queue admin-override
+
+For a pull request targeting ``2024.06``, use:
+
+.. code-block:: text
+
+  @mergifyio queue admin-override-2024.06
 
 The admin-only queue still requires the ``CI-Done`` check and still excludes WIP and blocked pull requests.
 

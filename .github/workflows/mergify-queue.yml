@@ -3,6 +3,7 @@ on:
   pull_request:
     branches:
       - master
+      - '2024.06'
     types:
       - opened
       - reopened
@@ -30,7 +31,7 @@ jobs:
       mailu_version: pr-${{ github.event.pull_request.number }}
       pinned_mailu_version: ${{ github.event.pull_request.head.sha }}
       docker_org: ghcr.io/${{ needs.derive-variables.outputs.docker_org }}
-      branch: master
+      branch: ${{ github.event.pull_request.base.ref }}
       deploy: 'false'
       release: 'false'
     secrets: inherit

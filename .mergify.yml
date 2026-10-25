@@ -15,12 +15,38 @@ queue_rules:
               - "#approved-reviews-by>=1"
           - "#approved-reviews-by>=2"
 
+  - name: 2024.06
+    batch_size: 5
+    merge_method: fast-forward
+    queue_conditions:
+      - base=2024.06
+      - -title~=(WIP|wip)
+      - -label~=^(status/wip|status/blocked)$
+    merge_conditions:
+      - check-success=CI-Done
+      - or:
+          - and:
+              - author~=^(mergify|kaiyou|muhlemmer|mildred|HorayNarea|hoellen|ofthesun9|Nebukadneza|micw|lub|Diman0|ghostwheel42|nextgens)$
+              - -label=review/need2
+              - "#approved-reviews-by>=1"
+          - "#approved-reviews-by>=2"
+
   # Allows an administrator to bypass the review count while keeping CI required.
   - name: admin-override
     batch_size: 1
     merge_method: fast-forward
     queue_conditions:
       - base=master
+      - -title~=(WIP|wip)
+      - -label~=^(status/wip|status/blocked)$
+    merge_conditions:
+      - check-success=CI-Done
+
+  - name: admin-override-2024.06
+    batch_size: 1
+    merge_method: fast-forward
+    queue_conditions:
+      - base=2024.06
       - -title~=(WIP|wip)
       - -label~=^(status/wip|status/blocked)$
     merge_conditions:
@@ -41,6 +67,16 @@ pull_request_rules:
     actions:
       queue:
         name: master
+
+  - name: Queue 2024.06 PRs for integration testing
+    conditions:
+      - base=2024.06
+      - -draft
+      - -title~=(WIP|wip)
+      - -label~=^(status/wip|status/blocked)$
+    actions:
+      queue:
+        name: 2024.06
 
   - name: Backport to 2024.06 branch
     conditions:
