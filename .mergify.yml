@@ -6,6 +6,12 @@ queue_rules:
       - base=master
       - -title~=(WIP|wip)
       - -label~=^(status/wip|status/blocked)$
+      - or:
+          - and:
+              - author~=^(mergify|kaiyou|muhlemmer|mildred|HorayNarea|hoellen|ofthesun9|Nebukadneza|micw|lub|Diman0|ghostwheel42|nextgens)$
+              - -label=review/need2
+              - "#approved-reviews-by>=1"
+          - "#approved-reviews-by>=2"
     merge_conditions:
       - check-success=CI-Done
       - or:
@@ -22,6 +28,12 @@ queue_rules:
       - base=2024.06
       - -title~=(WIP|wip)
       - -label~=^(status/wip|status/blocked)$
+      - or:
+          - and:
+              - author~=^(mergify|kaiyou|muhlemmer|mildred|HorayNarea|hoellen|ofthesun9|Nebukadneza|micw|lub|Diman0|ghostwheel42|nextgens)$
+              - -label=review/need2
+              - "#approved-reviews-by>=1"
+          - "#approved-reviews-by>=2"
     merge_conditions:
       - check-success=CI-Done
       - or:
@@ -64,6 +76,12 @@ pull_request_rules:
       - -draft
       - -title~=(WIP|wip)
       - -label~=^(status/wip|status/blocked)$
+      - or:
+          - and:
+              - author~=^(mergify|kaiyou|muhlemmer|mildred|HorayNarea|hoellen|ofthesun9|Nebukadneza|micw|lub|Diman0|ghostwheel42|nextgens)$
+              - -label=review/need2
+              - "#approved-reviews-by>=1"
+          - "#approved-reviews-by>=2"
     actions:
       queue:
         name: master
@@ -74,6 +92,12 @@ pull_request_rules:
       - -draft
       - -title~=(WIP|wip)
       - -label~=^(status/wip|status/blocked)$
+      - or:
+          - and:
+              - author~=^(mergify|kaiyou|muhlemmer|mildred|HorayNarea|hoellen|ofthesun9|Nebukadneza|micw|lub|Diman0|ghostwheel42|nextgens)$
+              - -label=review/need2
+              - "#approved-reviews-by>=1"
+          - "#approved-reviews-by>=2"
     actions:
       queue:
         name: '2024.06'
