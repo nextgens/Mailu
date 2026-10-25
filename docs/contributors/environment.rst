@@ -200,6 +200,14 @@ find the active draft pull request whose title begins with ``merge queue:`` and 
 When a batch changes, Mergify rebuilds it. WIP pull requests and those with the ``status/wip`` or
 ``status/blocked`` label stay out of the queue. Additional commits dismiss previous approvals, as before.
 
+Administrators can bypass the review count for an exceptional merge by commenting:
+
+.. code-block:: text
+
+  @mergifyio queue admin-override
+
+The admin-only queue still requires the ``CI-Done`` check and still excludes WIP and blocked pull requests.
+
 System requirements
 ```````````````````
 

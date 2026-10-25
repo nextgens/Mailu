@@ -15,6 +15,22 @@ queue_rules:
               - "#approved-reviews-by>=1"
           - "#approved-reviews-by>=2"
 
+  # Allows an administrator to bypass the review count while keeping CI required.
+  - name: admin-override
+    batch_size: 1
+    merge_method: fast-forward
+    queue_conditions:
+      - base=master
+      - -title~=(WIP|wip)
+      - -label~=^(status/wip|status/blocked)$
+    merge_conditions:
+      - check-success=CI-Done
+
+commands_restrictions:
+  queue:
+    conditions:
+      - sender-permission >= admin
+
 pull_request_rules:
   - name: Queue master PRs for integration testing
     conditions:
