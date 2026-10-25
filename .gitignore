@@ -5,9 +5,14 @@ pip-selfcheck.json
 /core/admin/lib*
 /core/admin/bin
 /core/admin/include
+/core/admin/assets/node_modules/
+/core/admin/assets/package-lock.json
+/core/admin/assets/static/
+/core/base/.venv
 /docs/lib*
 /docs/bin
 /docs/include
+/docs/contributors/mailu-network-diagram.svg
 /docs/_build
 /.env
 /.venv
@@ -15,3 +20,7 @@ pip-selfcheck.json
 /.idea
 /.vscode
 qemu-arm-static
+.todos/
+.mcp.json
+.memory/
+.claude_code_search/

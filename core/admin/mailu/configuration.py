@@ -25,13 +25,14 @@ DEFAULT_CONFIG = {
     'DB_PW': None,
     'DB_HOST': 'database',
     'DB_NAME': 'mailu',
+    'DB_APPENDIX': '',
     'SQLITE_DATABASE_FILE': 'data/main.db',
     'SQLALCHEMY_DATABASE_URI': 'sqlite:////data/main.db',
     'SQLALCHEMY_DATABASE_URI_ROUNDCUBE': 'sqlite:////data/roundcube.db',
     'SQLALCHEMY_TRACK_MODIFICATIONS': False,
     # Statistics management
     'INSTANCE_ID_PATH': '/data/instance',
-    'STATS_ENDPOINT': '20.{}.stats.mailu.io',
+    'STATS_ENDPOINT': '202406.{}.stats.mailu.io',
     # Common configuration variables
     'SECRET_KEY': 'changeMe',
     'DOMAIN': 'mailu.io',
@@ -47,10 +48,13 @@ DEFAULT_CONFIG = {
     'AUTH_RATELIMIT_USER': '50/day',
     'AUTH_RATELIMIT_EXEMPTION': '',
     'AUTH_RATELIMIT_EXEMPTION_LENGTH': 86400,
+    # Anonymous Email Service (anonmail) defaults
+    'ANONMAIL_MAX_RETRIES': 10,
     'DISABLE_STATISTICS': False,
     # Mail settings
     'DMARC_RUA': None,
     'DMARC_RUF': None,
+    'DMARC_SEND_REPORTS': False,
     'WELCOME': False,
     'WELCOME_SUBJECT': 'Dummy welcome topic',
     'WELCOME_BODY': 'Dummy welcome body',
@@ -72,6 +76,7 @@ DEFAULT_CONFIG = {
     'LOGO_URL': None,
     'LOGO_BACKGROUND': None,
     # Advanced settings
+    'AUTH_REQUIRE_TOKENS': True,
     'API': False,
     'WEB_API': '/api',
     'API_TOKEN': None,
@@ -82,16 +87,21 @@ DEFAULT_CONFIG = {
     'SESSION_TIMEOUT': 3600,
     'PERMANENT_SESSION_LIFETIME': 30*24*3600,
     'SESSION_COOKIE_SECURE': None,
-    'CREDENTIAL_ROUNDS': 12,
+    'PASSKEY_RP_ID': '',
+    'PASSKEY_REQUIRED': False,
+    'ACCOUNT_SETUP_TOKEN_TTL': 7 * 24 * 3600,
+    'CREDENTIAL_ROUNDS': 13,
     'TLS_PERMISSIVE': True,
     'TZ': 'Etc/UTC',
     'DEFAULT_SPAM_THRESHOLD': 80,
+    'PORTS': '25,80,443,465,993,995,4190',
     'PROXY_AUTH_WHITELIST': '',
     'PROXY_AUTH_HEADER': 'X-Auth-Email',
     'PROXY_AUTH_CREATE': False,
     'PROXY_AUTH_LOGOUT_URL': None,
     'SUBNET': '192.168.203.0/24',
     'SUBNET6': None,
+    'WEBDAV': '',
 }
 
 class ConfigManager:
@@ -100,8 +110,8 @@ class ConfigManager:
 
     DB_TEMPLATES = {
         'sqlite': 'sqlite:////{SQLITE_DATABASE_FILE}',
-        'postgresql': 'postgresql://{DB_USER}:{DB_PW}@{DB_HOST}/{DB_NAME}',
-        'mysql': 'mysql+mysqlconnector://{DB_USER}:{DB_PW}@{DB_HOST}/{DB_NAME}',
+        'postgresql': 'postgresql://{DB_USER}:{DB_PW}@{DB_HOST}/{DB_NAME}{DB_APPENDIX}',
+        'mysql': 'mysql+mysqlconnector://{DB_USER}:{DB_PW}@{DB_HOST}/{DB_NAME}{DB_APPENDIX}',
     }
 
     def __init__(self):
@@ -135,6 +145,9 @@ class ConfigManager:
             key: self.__coerce_value(self.__get_env(key, value))
             for key, value in DEFAULT_CONFIG.items()
         })
+        self.config['ACCOUNT_SETUP_TOKEN_TTL'] = int(
+            self.config['ACCOUNT_SETUP_TOKEN_TTL'],
+        )
 
         # automatically set the sqlalchemy string
         if self.config['DB_FLAVOR']:
@@ -161,6 +174,7 @@ class ConfigManager:
         self.config['HOSTNAMES'] = ','.join(hostnames)
         self.config['HOSTNAME'] = hostnames[0]
         self.config['DEFAULT_SPAM_THRESHOLD'] = int(self.config['DEFAULT_SPAM_THRESHOLD'])
+        self.config['ANONMAIL_MAX_RETRIES'] = int(self.config['ANONMAIL_MAX_RETRIES'])
         self.config['PROXY_AUTH_WHITELIST'] = set(ipaddress.ip_network(cidr, False) for cidr in (cidr.strip() for cidr in self.config['PROXY_AUTH_WHITELIST'].split(',')) if cidr)
         try:
             self.config['MAILU_VERSION'] = open('/version', 'r').read()

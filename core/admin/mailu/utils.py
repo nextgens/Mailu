@@ -12,11 +12,18 @@ import dns.flags
 import dns.rdtypes
 import dns.rdatatype
 import dns.rdataclass
+import idna
+import validators
+
+from email_validator import EmailNotValidError
+from email_validator import validate_email
 
 import hmac
 import secrets
 import string
 import time
+from tld import get_tld
+from tld import exceptions as tld_exceptions
 
 from multiprocessing import Value
 from mailu import limiter
@@ -27,7 +34,10 @@ import flask_login
 import flask_migrate
 import flask_babel
 import ipaddress
+from ipaddress import IPv4Address, IPv6Address
+
 import redis
+from wonderwords import RandomWord
 
 from datetime import datetime, timedelta
 from flask.sessions import SessionMixin, SessionInterface
@@ -42,14 +52,58 @@ login.login_view = "sso.login"
 @login.unauthorized_handler
 def handle_needs_login():
     """ redirect unauthorized requests to login page """
-    return flask.redirect(
-        flask.url_for('sso.login', url=flask.request.url)
-    )
+    from mailu import signin
+    signin.remember(flask.request.full_path.rstrip('?'))
+    return flask.redirect(flask.url_for('sso.login'))
 
 # DNS stub configured to do DNSSEC enabled queries
 resolver = dns.resolver.Resolver()
 resolver.use_edns(0, dns.flags.DO, 1232)
 resolver.flags = dns.flags.AD | dns.flags.RD
+
+DEMO_ACCOUNT_EMAIL = 'admin@test.mailu.io'
+DEMO_ACCOUNT_NOTICE = (
+    'Password changes and passkey creation are disabled for this user on the '
+    'demo server. You can create other users to try these features.'
+)
+
+
+def is_demo_account(user):
+    return user.email == DEMO_ACCOUNT_EMAIL
+
+
+def is_valid_localpart(localpart):
+    """Validate an RFC 5321/6531 dot-atom local-part."""
+    if not isinstance(localpart, str) or not localpart:
+        return False
+    try:
+        if any(len(candidate.encode('utf-8')) > 64
+               for candidate in (localpart, localpart.lower())):
+            return False
+    except UnicodeEncodeError:
+        return False
+    try:
+        validate_email(
+            f'{localpart}@example.com',
+            allow_smtputf8=True,
+            check_deliverability=False,
+            strict=True,
+        )
+    except EmailNotValidError:
+        return False
+    return True
+
+
+def is_valid_email(email):
+    """Validate a mailbox while preserving Mailu's existing domain policy."""
+    if not isinstance(email, str) or email.count('@') != 1:
+        return False
+    localpart, domain = email.rsplit('@', 1)
+    try:
+        idna.encode(domain.lower())
+    except idna.IDNAError:
+        return False
+    return is_valid_localpart(localpart) and bool(validators.domain(domain))
 
 def has_dane_record(domain, timeout=10):
     try:
@@ -63,10 +117,10 @@ def has_dane_record(domain, timeout=10):
         # If the DNSSEC data is invalid and the DNS resolver is DNSSEC enabled
         # we will receive this non-specific exception. The safe behaviour is to
         # accept to defer the email.
-        app.logger.warn(f'Unable to lookup the TLSA record for {domain}. Is the DNSSEC zone okay on https://dnsviz.net/d/{domain}/dnssec/?')
+        app.logger.warning(f'Unable to lookup the TLSA record for {domain}. Is the DNSSEC zone okay on https://dnsviz.net/d/{domain}/dnssec/?')
         return app.config['DEFER_ON_TLS_ERROR']
     except dns.exception.Timeout:
-        app.logger.warn(f'Timeout while resolving the TLSA record for {domain} ({timeout}s).')
+        app.logger.warning(f'Timeout while resolving the TLSA record for {domain} ({timeout}s).')
     except (dns.resolver.NXDOMAIN, dns.name.EmptyLabel):
         pass # this is expected, not TLSA record is fine
     except Exception as e:
@@ -76,21 +130,28 @@ def has_dane_record(domain, timeout=10):
 # Rate limiter
 limiter = limiter.LimitWraperFactory()
 
+def normalize_ip(ip) -> IPv4Address | IPv6Address:
+    # Dual-stack listeners see IPv4 clients as IPv4-mapped IPv6 addresses (::ffff:a.b.c.d)
+    addr = ipaddress.ip_address(ip)
+    if addr.version == 6 and addr.ipv4_mapped:
+        return addr.ipv4_mapped
+    return addr
+
 def extract_network_from_ip(ip):
-    n = ipaddress.ip_network(ip)
+    n = ipaddress.ip_network(str(normalize_ip(ip)))
     if n.version == 4:
         return str(n.supernet(prefixlen_diff=(32-app.config["AUTH_RATELIMIT_IP_V4_MASK"])).network_address)
     else:
         return str(n.supernet(prefixlen_diff=(128-app.config["AUTH_RATELIMIT_IP_V6_MASK"])).network_address)
 
 def is_exempt_from_ratelimits(ip):
-    ip = ipaddress.ip_address(ip)
+    ip = normalize_ip(ip)
     return any(ip in cidr for cidr in app.config['AUTH_RATELIMIT_EXEMPTION'])
 
 def is_ip_in_subnet(ip, subnets=[]):
     if isinstance(subnets, str):
         subnets = [subnets]
-    ip = ipaddress.ip_address(ip)
+    ip = normalize_ip(ip)
     try:
         return any(ip in cidr for cidr in [ipaddress.ip_network(subnet, strict=False) for subnet in subnets])
     except:
@@ -100,14 +161,15 @@ def is_ip_in_subnet(ip, subnets=[]):
 # Application translation
 babel = flask_babel.Babel()
 
-@babel.localeselector
 def get_locale():
     """ selects locale for translation """
     if not app.config['SESSION_COOKIE_NAME'] in flask.request.cookies:
-        return flask.request.accept_languages.best_match(app.config.translations.keys())
+        return (flask.request.accept_languages.best_match(app.config.translations.keys())
+                or app.config['BABEL_DEFAULT_LOCALE'])
     language = flask.session.get('language')
     if not language in app.config.translations:
-        language = flask.request.accept_languages.best_match(app.config.translations.keys())
+        language = (flask.request.accept_languages.best_match(app.config.translations.keys())
+                or app.config['BABEL_DEFAULT_LOCALE'])
         flask.session['language'] = language
     return language
 
@@ -310,7 +372,7 @@ class MailuSessionConfig:
     # default size of session key parts
     uid_bits = 64 # default if SESSION_KEY_BITS is not set in config
     sid_bits = 128 # for now. must be multiple of 8!
-    time_bits = 32 # for now. must be multiple of 8!  
+    time_bits = 32 # for now. must be multiple of 8!
 
     def __init__(self, app=None):
 
@@ -400,7 +462,7 @@ class MailuSessionInterface(SessionInterface):
             if session.modified:
                 session.delete()
                 response.delete_cookie(
-                    app.session_cookie_name,
+                    app.config['SESSION_COOKIE_NAME'],
                     domain=self.get_cookie_domain(app),
                     path=self.get_cookie_path(app),
                 )
@@ -413,8 +475,8 @@ class MailuSessionInterface(SessionInterface):
         # save session and update cookie if necessary
         if session.save():
             response.set_cookie(
-                app.session_cookie_name,
-                session.sid,
+                app.config['SESSION_COOKIE_NAME'],
+                session.sid.decode('ascii'),
                 expires=datetime.now()+timedelta(seconds=app.config['PERMANENT_SESSION_LIFETIME']),
                 httponly=self.get_cookie_httponly(app),
                 domain=self.get_cookie_domain(app),
@@ -473,28 +535,29 @@ class MailuSessionExtension:
     def init_app(self, app):
         """ Replace session management of application. """
 
+        redis_session = False
+
         if app.config.get('MEMORY_SESSIONS'):
             # in-memory session store for use in development
             app.session_store = DictStore()
 
         else:
             # redis-based session store for use in production
+            redis_session = True
             app.session_store = RedisStore(
                 redis.StrictRedis().from_url(app.config['SESSION_STORAGE_URL'])
             )
 
+        app.session_config = MailuSessionConfig(app)
+        app.session_interface = MailuSessionInterface()
+        if redis_session:
             # clean expired sessions once on first use in case lifetime was changed
-            def cleaner():
+            with app.app_context():
                 with cleaned.get_lock():
                     if not cleaned.value:
                         cleaned.value = True
                         app.logger.info('cleaning session store')
                         MailuSessionExtension.cleanup_sessions(app)
-
-            app.before_first_request(cleaner)
-
-        app.session_config = MailuSessionConfig(app)
-        app.session_interface = MailuSessionInterface()
 
 cleaned = Value('i', False)
 session = MailuSessionExtension()
@@ -532,6 +595,7 @@ def isBadOrPwned(form):
 
 def formatCSVField(field):
     if not field.data:
+        field.data = ''
         return
     if isinstance(field.data,str):
         data = field.data.replace(" ","").split(",")
@@ -547,3 +611,85 @@ def is_app_token(candidate):
 
 def truncated_pw_hash(pw):
     return hmac.new(app.truncated_pw_key, bytearray(pw, 'utf-8'), 'sha256').hexdigest()[:6]
+
+
+
+def generate_anonymous_alias_localpart(hostname=None):
+    """Generate a localpart for an anonymous alias.
+
+    Pattern:
+    - With hostname: hostname_prefix.randomword (e.g., groupon.banana)
+    - Without hostname: random_token
+
+    Args:
+        hostname: Optional website hostname (e.g., 'www.groupon.com', 'https://example.com/path')
+
+    Returns:
+        The localpart string (without @domain)
+    """
+
+    hostname_prefix = None
+    if hostname:
+        host_with_scheme = hostname if '://' in hostname else f'http://{hostname}'
+        try:
+            obj = get_tld(host_with_scheme, as_object=True, fix_protocol=True)
+            if obj is not None:
+                hostname_prefix = obj.domain
+        except (tld_exceptions.TldDomainNotFound, tld_exceptions.TldBadUrl):
+            hostname_prefix = None
+    
+    if hostname_prefix:
+        hostname_prefix = ''.join(c for c in hostname_prefix.lower() if c.isalnum())
+
+        # Try to get a random word for hostname-based aliases
+        random_part = None
+        try:
+            rw = RandomWord()
+            candidate = rw.word(
+                word_min_length=5,
+                word_max_length=10,
+                regex=r"[A-Za-z]+",
+            )
+            if candidate and isinstance(candidate, str):
+                w = candidate.strip().lower()
+                if w.isalpha():
+                    random_part = w
+        except Exception:
+            pass
+
+        if random_part is None:
+            random_part = ''.join(secrets.choice(string.ascii_lowercase) for _ in range(10))
+
+        return f"{hostname_prefix}.{random_part}"
+
+    # No hostname: return short random token
+    return secrets.token_urlsafe(12)
+
+
+def check_credentials_for_api(user, password, ip):
+    """Check credentials for API authentication using app tokens only.
+    
+    This function validates that the provided password is an app token for the user.
+    Direct password authentication is NOT supported for API access - users must use tokens.
+    
+    Args:
+        user: The User model object
+        password: The app token to verify
+        ip: The IP address of the client
+        
+    Returns:
+        True if the token is valid, False otherwise
+    """
+    if not user or not user.enabled:
+        return False
+    
+    # Only allow app tokens, not passwords
+    if is_app_token(password):
+        for token in user.tokens:
+            if token.check_password(password):
+                if not token.ip or is_ip_in_subnet(ip, token.ip):
+                    return True
+                else:
+                    return False  # Token is valid but IP is restricted
+    
+    return False

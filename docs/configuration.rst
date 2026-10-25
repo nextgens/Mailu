@@ -33,12 +33,19 @@ This should not conflict with any networks to which your system is connected.
 (Internal and external!). Normally this does not need to be changed,
 unless there is a conflict with existing networks.
 
+The ``SUBNET6`` (default: unset) defines the IPv6 address range of the docker network used by Mailu.
+It is set by the setup utility when IPv6 is enabled and should be a ULA range (``fd00::/8``).
+When it is set, Mailu services listen on IPv6 addresses as well. Leave it unset to run IPv4 only.
+Enabling IPv6 also requires the Docker network to have IPv6 enabled, see :doc:`faq` for details.
+
 The ``POSTMASTER`` is the local part of the postmaster email address. It is
 recommended to setup a generic value and later configure a mail alias for that
 address.
 
 The ``WILDCARD_SENDERS`` setting is a comma delimited list of user email addresses
 that are allowed to send emails from any existing address (spoofing the sender).
+
+.. _AUTH Ratelimit:
 
 The ``AUTH_RATELIMIT_IP`` (default: 5/hour) holds a security setting for fighting
 attackers that attempt a password spraying attack. The value defines the limit of
@@ -62,8 +69,7 @@ The ``AUTH_RATELIMIT_EXEMPTION`` (default: '') is a comma separated list of netw
 CIDRs that won't be subject to any form of rate limiting. Specifying ``0.0.0.0/0, ::/0``
 there is a good way to disable rate limiting altogether.
 
-The ``TLS_FLAVOR`` sets how Mailu handles TLS connections. Setting this value to
-``notls`` will cause Mailu not to serve any web content! More on :ref:`tls_flavor`.
+The ``TLS_FLAVOR`` sets how Mailu obtains a x509 certificate. More on :ref:`tls_flavor`.
 
 The ``DEFAULT_SPAM_THRESHOLD`` (default: 80) is the default spam tolerance used when creating a new user.
 
@@ -83,7 +89,7 @@ account on the server.
 The ``RELAYNETS`` (default: unset) is a comma delimited list of network addresses
 for which mail is relayed for with no authentication required. This should be
 used with great care as misconfigurations may turn your Mailu instance into an
-open-relay!
+open-relay! Make sure clients are using port 25 with no authentication.
 
 The ``RELAYHOST`` is an optional address to use as a smarthost for all outgoing
 mail in following format: ``[HOST]:PORT``. ``RELAYUSER`` and ``RELAYPASSWORD``
@@ -131,14 +137,20 @@ later classify incoming mail based on the custom part.
 The ``DMARC_RUA`` and ``DMARC_RUF`` are DMARC protocol specific values. They hold
 the localpart for DMARC rua and ruf email addresses.
 
+``DMARC_SEND_REPORTS`` (default: false) enables automated DMARC aggregate report 
+generation and sending using Rspamd 3.0+. When enabled, Mailu will automatically 
+generate and send daily DMARC aggregate reports to domains that request them via 
+their DMARC policy records. Reports are sent at 2 AM daily for the previous day's 
+email traffic from ``POSTMASTER@DOMAIN``.
+
 The ``FULL_TEXT_SEARCH`` variable (default: 'en') is a comma separated list of
-language codes as defined on `fts_languages`_. This feature can be disabled
-(e.g. for performance reasons) by setting the variable to ``off``.
+ISO 639-1 language codes, as listed under `Dovecot languages`_. This feature can
+be disabled (e.g. for performance reasons) by setting the variable to ``off``.
 
 You can set a global ``DEFAULT_QUOTA`` to be used for mailboxes when the domain has
 no specific quota configured.
 
-.. _`fts_languages`: https://doc.dovecot.org/settings/plugin/fts-plugin/#fts-languages
+.. _`Dovecot languages`: https://doc.dovecot.org/latest/core/plugins/fts.html
 
 .. _web_settings:
 
@@ -214,11 +226,15 @@ Depending on your particular deployment you most probably will want to change th
 Advanced settings
 -----------------
 
-The ``API_TOKEN`` (default: None) configures the authentication token.
+
+The ``AUTH_REQUIRE_TOKENS`` (default: True) setting requires email clients to authenticate using authentication tokens (application-specific passwords). Create one token per app or device and save it in the client's incoming and outgoing password fields. Web sign-in continues to support account passwords and passkeys. Installations that need legacy password authentication for email clients can explicitly set ``AUTH_REQUIRE_TOKENS=False``.
+
+The ``API_TOKEN`` (default: None) setting configures the authentication token.
+The minimum length is 3 characters.
 This token must be passed as request header to the API as authentication token.
 This is a mandatory setting for using the RESTful API.
 
-The ``CREDENTIAL_ROUNDS`` (default: 12) setting is the number of rounds used by the
+The ``CREDENTIAL_ROUNDS`` (default: 13) setting is the number of rounds used by the
 password hashing scheme. The number of rounds can be reduced in case faster
 authentication is needed or increased when additional protection is desired.
 Keep in mind that this is a mitigation against offline attacks on password hashes,
@@ -227,6 +243,34 @@ aiming to prevent credential stuffing (due to password re-use) on other systems.
 The ``SESSION_COOKIE_SECURE`` (default: True) setting controls the secure flag on
 the cookies of the administrative interface. It should only be turned off if you
 intend to access it over plain HTTP.
+
+The ``PASSKEY_RP_ID`` setting selects the WebAuthn relying-party ID for passkeys.
+It defaults to the first hostname in ``HOSTNAMES``. Set it to the domain users
+access the web interface through if that differs from the first hostname. Passkeys
+require a secure browser context, normally HTTPS.
+
+The ``PASSKEY_REQUIRED`` setting (default: ``False``) requires every account
+to use a passkey, across all domains. When enabled, password sign-in is disabled
+and the login form only offers passkey sign-in. Accounts without a passkey need
+a one-time account setup link from their domain administrator before they can
+sign in. This is a server-wide passwordless policy.
+
+Domain managers can instead enable **Require all users to enroll a passkey** in
+the domain's passkey policy. This requires users without a passkey to set one up
+after signing in, while allowing them to use their existing password to sign in.
+They cannot continue to other Mailu pages until enrollment is complete. A manager
+can create a one-time setup or recovery link from the user's edit page to help a
+locked-out user. The link can also set or reset a password when the account is
+allowed to use passwords. Global administrators can manage all domain settings; domain managers
+can edit only the passkey policy. For a per-user requirement, use **Require
+passkey** on the user's create or edit form; this option is hidden if
+the domain already requires passkeys or the server-wide setting is enabled.
+
+The ``ACCOUNT_SETUP_TOKEN_TTL`` setting controls how long one-time account setup
+and recovery links remain valid, in seconds. It defaults to ``604800`` (one
+week). A link can be used once to set a password or add a passkey, subject to
+account passkey policies. Generating a replacement invalidates any previous
+link for that account.
 
 ``SESSION_TIMEOUT`` (default: 3600) is the maximum amount of time in seconds between
 requests before a session is invalidated. ``PERMANENT_SESSION_LIFETIME`` (default: 108000)
@@ -239,38 +283,50 @@ See the `python docs`_ for more information.
 
 .. _`python docs`: https://docs.python.org/3.6/library/logging.html#logging-levels
 
-The ``LETSENCRYPT_SHORTCHAIN`` (default: False) setting controls whether we send the
-ISRG Root X1 certificate in TLS handshakes. This is required for `android handsets older than 7.1.1`
-but slows down the performance of modern devices.
+Let's Encrypt certificate chains are served as issued by Certbot. Nginx uses the
+ECDSA certificate, except on SMTP port 25 where Mailu serves both RSA and ECDSA
+chains with a DNS-published ISRG trust anchor for DANE validation.
 
-.. _`android handsets older than 7.1.1`: https://community.letsencrypt.org/t/production-chain-changes/150739
+The ``TLS_PERMISSIVE`` (default: true) setting controls whether ciphers and protocols offered on port 25
+for STARTTLS are optimized for maximum compatibility. We **strongly recommend** that you do **not** change
+this setting on the basis that any encryption beats no encryption. If you are subject to compliance
+requirements and are not afraid of losing emails as a result of artificially reducing compatibility,
+set it to 'false'. Keep in mind that servers that are running a software stack old enough to not be
+compatible with the current TLS requirements will either a) deliver in plaintext b) bounce emails
+c) silently drop emails; moreover, modern servers will benefit from various downgrade protections
+(DOWNGRD, RFC7507) making the security argument mostly a moot point.
 
-The ``TLS_PERMISSIVE`` (default: true) setting controls whether ciphers and protocols offered on port 25 for STARTTLS are optimized for maximum compatibility. We **strongly recommend** that you do **not** change this setting on the basis that any encryption beats no encryption. If you are subject to compliance requirements and are not afraid of losing emails as a result of artificially reducing compatibility, set it to 'false'. Keep in mind that servers that are running a software stack old enough to not be compatible with the current TLS requirements will either a) deliver in plaintext b) bounce emails c) silently drop emails; moreover, modern servers will benefit from various downgrade protections (DOWNGRD, RFC7507) making the security argument mostly a moot point.
+The ``COMPRESSION`` (default: unset) setting controls whether emails are stored compressed at rest on disk.
+Valid values are ``gz``, ``bz2`` or ``zstd``. The compression strength is set with
+``COMPRESSION_LEVEL``, whose meaning depends on the method: for ``gz`` it is the zlib level (0 to 9),
+for ``zstd`` the zstd level, and for ``bz2`` it is the block size in units of 100k (1 to 9). See
+`mail_compress`_ for details. If the underlying filesystem
+supports compression natively you should use it instead of this setting as it will be more efficient
+and will improve compatibility with 3rd party tools.
 
-The ``COMPRESSION`` (default: unset) setting controls whether emails are stored compressed at rest on disk. Valid values are ``gz``, ``bz2`` or ``zstd`` and additional settings can be configured via ``COMPRESSION_LEVEL``, see `zlib_save_level`_ for accepted values. If the underlying filesystem supports compression natively you should use it instead of this setting as it will be more efficient and will improve compatibility with 3rd party tools.
-
-.. _`zlib_save_level`: https://doc.dovecot.org/settings/plugin/zlib-plugin/#plugin_setting-zlib-zlib_save_level
+.. _`mail_compress`: https://doc.dovecot.org/latest/core/plugins/mail_compress.html
 
 .. _reverse_proxy_headers:
 
 The ``REAL_IP_HEADER`` (default: unset) and ``REAL_IP_FROM`` (default: unset) settings
-controls whether HTTP headers such as ``X-Forwarded-For`` or ``X-Real-IP`` should be trusted.
-The former should be the name of the HTTP header to extract the client IP address from and the
-later a comma separated list of IP addresses designating which proxies to trust.
-If you are using Mailu behind a reverse proxy, you should set both. Setting the former without
-the latter introduces a security vulnerability allowing a potential attacker to spoof their source address.
+control whether HTTP headers such as ``X-Forwarded-For`` or ``X-Real-IP`` should be trusted.
+These settings are for HTTP-header-based proxies. For the recommended TCP reverse-proxy setup,
+use ``PROXY_PROTOCOL`` and ``REAL_IP_FROM`` instead, and leave ``REAL_IP_HEADER`` unset. If your
+proxy forwards client addresses in HTTP headers, set ``REAL_IP_HEADER`` to the header name and
+``REAL_IP_FROM`` to a comma-separated list of trusted proxy addresses. Setting the former without
+the latter introduces a security vulnerability that allows an attacker to spoof their source address.
 
 The ``TZ`` sets the timezone Mailu will use. The timezone naming convention usually uses a ``Region/City`` format. See `TZ database name`_  for a list of valid timezones This defaults to ``Etc/UTC``. Warning: if you are observing different timestamps in your log files you should change your hosts timezone to UTC instead of changing TZ to your local timezone. Using UTC allows easy log correlation with remote MTAs.
 
 .. _`TZ database name`: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 
-The ``PROXY_PROTOCOL`` (default: unset) allows the the front container to receive TCP and HTTP connections with
-the `PROXY protocol`_ (originally introduced in HAProxy, now also configurable in other proxy servers).
-It can be set to:
 
-* ``http`` to accept the ``PROXY`` protocol on nginx's HTTP proxy ports
-* ``mail`` to accept the ``PROXY`` protocol on nginx's mail proxy ports
-* ``all`` to accept the ``PROXY`` protocol on all nginx's HTTP and mail proxy ports
+The ``PORTS`` (default: '25,80,443,465,993,995,4190') setting determines which services should be enabled. It is a comma delimited list of ports numbers.
+If you need to re-enable IMAP, POP3 and Submission, you can append '110,143,587' to that list. Please note that ports 25,465 and 993 cannot be disabled.
+
+The ``PROXY_PROTOCOL`` (default: unset) setting allows the the front container to receive TCP and HTTP connections with
+the `PROXY protocol`_ (originally introduced in HAProxy, now also configurable in other proxy servers).
+It can be set to a comma delimited list of ports on which it should be enabled.
 
 .. _`PROXY protocol`: https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt
 
@@ -376,22 +432,6 @@ To disable all plugins just set ``ROUNDCUBE_PLUGINS`` to ``mailu``.
 
 To configure a plugin add php files named ``*.inc.php`` to roundcube's :ref:`override section <override-label>`.
 
-Mail log settings
------------------
-
-By default, all services log directly to stdout/stderr. Logs can be collected by any docker log processing solution.
-
-Postfix writes the logs to a syslog server which logs to stdout. This is used to filter
-out messages from the healthcheck. In some situations, a separate mail log is required
-(e.g. for legal reasons). The syslog server can be configured to write log files to a volume.
-It can be configured with the following option:
-
-- ``POSTFIX_LOG_FILE``: The file to log the mail log to. When enabled, the syslog server will also log to stdout.
-
-When ``POSTFIX_LOG_FILE`` is enabled, the logrotate program will automatically rotate the
-logs every week and keep 52 logs. To override the logrotate configuration, create the file logrotate.conf
-with the desired configuration in the :ref:`Postfix overrides folder<override-label>`.
-
 .. _header_authentication:
 
 Header authentication using an external proxy
@@ -405,9 +445,14 @@ Once configured, any request to /sso/login with the correct headers will be auth
 
 Requests to:
 
-- "/sso/login" results the user being redirected to the web administration interface after authentication.
-- "/admin" (``WEB_ADMIN=/admin``) results the user being redirected to the web administration interface  after authentication.
-- "/webmail" (``WEB_WEBMAIL=/webmail``) results the user being redirected to the web administration interface  after authentication.
+- ``/sso/login`` use the browser preference from the last successful sign-in, defaulting to Webmail when enabled.
+- ``/sso/login/admin`` explicitly select ``WEB_ADMIN``.
+- ``/sso/login/webmail`` explicitly select ``WEB_WEBMAIL``.
+- Protected pages under ``WEB_ADMIN`` and ``WEB_WEBMAIL`` return to the original
+  page after authentication. Return destinations are stored server-side rather
+  than placed in internally generated ``?url=`` links.
+
+The ``mailu_signin_target`` cookie remembers only the selected application for one year. Explicit sign-in routes and protected-page return destinations override this preference. Existing same-origin ``?url=`` bookmarks remain supported.
 
 Use ``PROXY_AUTH_LOGOUT_URL`` (default: unset) to redirect users to a specific URL after they have been logged out.
 

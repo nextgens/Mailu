@@ -12,11 +12,16 @@ $config['reply_all_mode'] = 1;
 $config['log_driver'] = 'stdout';
 $config['zipdownload_selection'] = true;
 $config['enable_spellcheck'] = true;
-$config['spellcheck_engine'] = 'pspell';
+$config['spellcheck_engine'] = 'enchant';
 $config['spellcheck_languages'] = array('en'=>'English (US)', 'uk'=>'English (UK)', 'de'=>'Deutsch', 'fr'=>'French', 'ru'=>'Russian');
 $config['session_lifetime'] = {{ (((PERMANENT_SESSION_LIFETIME | default(10800)) | int)/3600) | int }};
 $config['request_path'] = '{{ WEB_WEBMAIL or "none" }}';
 $config['trusted_host_patterns'] = [ {{ HOSTNAMES.split(",") | map("tojson") | join(',') }}];
+
+{% if (FULL_TEXT_SEARCH or '').lower() not in ['off', 'false', '0'] %}
+$config['search_mods'] = ['*' => ['subject'=>1, 'from'=>1, 'to'=>1, 'cc'=>1, 'bcc'=>1, 'replyto'=>1, 'followupto'=>1, 'body'=>1]];
+$config['search_scope'] = 'sub';
+{% endif %}
 
 // Mail servers
 $config['imap_host'] = 'tls://{{ FRONT_ADDRESS or "front" }}:10143';

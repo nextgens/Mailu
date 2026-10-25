@@ -29,13 +29,8 @@ if spamtest :percent :value "gt" :comparator "i;ascii-numeric" "{{ user.spam_thr
 }
 {% endif %}
 
-if exists "X-Virus" {
-  discard;
-  stop;
-}
-
 {% if user.reply_active %}
 if not address :localpart :contains ["From","Reply-To"] ["noreply","no-reply"]{
-  vacation :days 1 {% if user.displayed_name != "" %}:from "{{ user.displayed_name }} <{{ user.email }}>"{% endif %} :subject "{{ user.reply_subject }}" "{{ user.reply_body }}";
+  vacation :days 1 {% if user.displayed_name != "" %}:from "\"{{ user.displayed_name | sieve_string }}\" <{{ user.email | sieve_string }}>"{% endif %} :subject "{{ (user.reply_subject or '') | sieve_string }}" {% if user.reply_body_html %}:mime "{{ user.reply_mime | sieve_string }}"{% else %}"{{ (user.reply_body or '') | sieve_string }}"{% endif %};
 }
 {% endif %}

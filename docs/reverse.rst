@@ -7,18 +7,45 @@ other Web services are available on other FQDNs served from the same IP address.
 In such a configuration, one would usually run a front-end reverse proxy to serve all
 Web contents based on criteria like the requested hostname (virtual hosts).
 
+The Mailu team recommends to use Traefik as reverse proxy. This program is solely designed
+to act as reverse proxy. It is easy to configure and offers a streamlined experienced when
+used with other docker containers on the same host.
+
+When using a reverse proxy, Mailu should still be used for requesting certificates.
+This prevents duplicate certificates.
+Other reasons are:
+
+- Mailu controls the ciphers and keys used for certificates (Mailu has both RSA and ECDSA certs)
+- Mailu cerbot client is configured to prevent hitting ratelimits of the CA
+- Due to usage of proxy protocol it is less likely that Mailu becomes an open relay due to misconfiguration of special headers.
+- No special scripting is required to copy over certs from the proxy to Mailu
+
+For Mailu traffic, configure the proxy to route TLS connections by SNI and pass them through to
+Mailu over TCP. Do not terminate TLS at the proxy and forward decrypted HTTP to Mailu. TLS
+passthrough lets Mailu manage HTTPS and use the PROXY protocol to receive the original client
+address. The examples below use this approach.
+
+When using Mailu with Traefik as reverse proxy. Traefik is configured to use proxy protocol for all ports, but port 80.
+Port 80 is configured to let through the letsencrypt HTTP challenges for Mailu.
+This means that if Traefik must request certificates for other services than Mailu, Traefik should use the TLS (TLS-ALPN-01)
+challenge method. The HTTP challenge (HTTP-01) cannot be used since this is already used by Mailu.
+
 .. _traefik_proxy:
 
-Traefik as reverse proxy
-------------------------
+Traefik as reverse proxy (same host)
+------------------------------------
 
-In your docker-compose.yml, add a section like follows:
+This example is for when Traefik (reverse proxy) runs on the same host as Mailu.
+It makes use of the docker configuration method for Traefik.
+
+In your docker-compose.yml, remove the `ports` section of the `front` container
+and add a section like follows:
 
 .. code-block:: yaml
 
   reverse-proxy:
     # The official v2 Traefik docker image
-    image: traefik:v2.10
+    image: traefik:v2.11
     # Enables the web UI and tells Traefik to listen to docker
     command:
       - "--providers.docker=true"
@@ -27,29 +54,22 @@ In your docker-compose.yml, add a section like follows:
       - "--entrypoints.web.address=:http"
       - "--entrypoints.websecure.address=:https"
       - "--entrypoints.smtp.address=:smtp"
-      - "--entrypoints.submission.address=:submission"
       - "--entrypoints.submissions.address=:submissions"
-      - "--entrypoints.imap.address=:imap"
       - "--entrypoints.imaps.address=:imaps"
-      - "--entrypoints.pop3.address=:pop3"
       - "--entrypoints.pop3s.address=:pop3s"
       - "--entrypoints.sieve.address=:sieve"
-        #  - "--api.insecure=true"
-      - "--log.level=DEBUG"
+      # - "--api.insecure=true"
+      # - "--log.level=DEBUG"
     ports:
-      # The HTTP port
       - "25:25"
       - "80:80"
       - "443:443"
       - "465:465"
-      - "587:587"
       - "993:993"
       - "995:995"
-      - "110:110"
-      - "143:143"
       - "4190:4190"
       # The Web UI (enabled by --api.insecure=true)
-      #- "8080:8080"
+      # - "8080:8080"
     volumes:
       # So that Traefik can listen to the Docker events
       - /var/run/docker.sock:/var/run/docker.sock
@@ -61,12 +81,12 @@ and then add the following to the front section:
   labels:
       - "traefik.enable=true"
 
-      # the second part is important to ensure Mailu can get certificates from letsencrypt
-      - "traefik.http.routers.web.rule=Host(`mail.example.com`) || Path(`/.well-known/acme-challenge/`)"
+      # the second part is important to ensure Mailu can get certificates from letsencrypt for all hostnames
+      - "traefik.http.routers.web.rule=Host(`mail.example.com`) || PathPrefix(`/.well-known/acme-challenge/`)"
       - "traefik.http.routers.web.entrypoints=web"
       - "traefik.http.services.web.loadbalancer.server.port=80"
 
-      #other FQDNS can be added here:
+      # other FQDNS can be added here:
       - "traefik.tcp.routers.websecure.rule=HostSNI(`mail.example.com`) || HostSNI(`autoconfig.example.com`) || HostSNI(`mta-sts.example.com`)"
       - "traefik.tcp.routers.websecure.entrypoints=websecure"
       - "traefik.tcp.routers.websecure.tls.passthrough=true"
@@ -80,35 +100,17 @@ and then add the following to the front section:
       - "traefik.tcp.services.smtp.loadbalancer.server.port=25"
       - "traefik.tcp.services.smtp.loadbalancer.proxyProtocol.version=2"
 
-      - "traefik.tcp.routers.submission.rule=HostSNI(`*`)"
-      - "traefik.tcp.routers.submission.entrypoints=submission"
-      - "traefik.tcp.routers.submission.service=submission"
-      - "traefik.tcp.services.submission.loadbalancer.server.port=587"
-      - "traefik.tcp.services.submission.loadbalancer.proxyProtocol.version=2"
-
       - "traefik.tcp.routers.submissions.rule=HostSNI(`*`)"
       - "traefik.tcp.routers.submissions.entrypoints=submissions"
       - "traefik.tcp.routers.submissions.service=submissions"
       - "traefik.tcp.services.submissions.loadbalancer.server.port=465"
       - "traefik.tcp.services.submissions.loadbalancer.proxyProtocol.version=2"
 
-      - "traefik.tcp.routers.imap.rule=HostSNI(`*`)"
-      - "traefik.tcp.routers.imap.entrypoints=imap"
-      - "traefik.tcp.routers.imap.service=imap"
-      - "traefik.tcp.services.imap.loadbalancer.server.port=143"
-      - "traefik.tcp.services.imap.loadbalancer.proxyProtocol.version=2"
-
       - "traefik.tcp.routers.imaps.rule=HostSNI(`*`)"
       - "traefik.tcp.routers.imaps.entrypoints=imaps"
       - "traefik.tcp.routers.imaps.service=imaps"
       - "traefik.tcp.services.imaps.loadbalancer.server.port=993"
       - "traefik.tcp.services.imaps.loadbalancer.proxyProtocol.version=2"
-
-      - "traefik.tcp.routers.pop3.rule=HostSNI(`*`)"
-      - "traefik.tcp.routers.pop3.entrypoints=pop3"
-      - "traefik.tcp.routers.pop3.service=pop3"
-      - "traefik.tcp.services.pop3.loadbalancer.server.port=110"
-      - "traefik.tcp.services.pop3.loadbalancer.proxyProtocol.version=2"
 
       - "traefik.tcp.routers.pop3s.rule=HostSNI(`*`)"
       - "traefik.tcp.routers.pop3s.entrypoints=pop3s"
@@ -126,12 +128,225 @@ and then add the following to the front section:
 
 in mailu.env:
 
-.. code-block:: docker
+.. code-block:: bash
 
   REAL_IP_FROM=192.168.203.0/24
-  PROXY_PROTOCOL=all-but-http
+  PROXY_PROTOCOL=25,443,465,993,995,4190
   TRAEFIK_VERSION=v2
-  TLS_FLAVOR=mail-letsencrypt
+  TLS_FLAVOR=letsencrypt
   WEBROOT_REDIRECT=/sso/login
+
+Using the above configuration, Traefik will proxy all the traffic related to Mailu's FQDNs without requiring duplicate certificates.
+
+If you want to have separate subdomains for e.g. small web apps, and want to use letsencrypt to provide certificates
+for both, you can add the following to the commands section of `reverse-proxy`
+
+.. code-block:: yaml
+
+      - "--certificatesresolvers.letsencrypt.acme.email=<contact email>"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=false"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+
+It is important to use the TLS challenge here and disable HTTP challenge so that internal letsencrypt handling and traefik
+don't interfere.
+
+You should also add a dedicated network for traefik to be used by the 'external' subdomains.
+
+.. code-block:: yaml
+
+    networks:
+      - default
+      - webmail
+      - traefik-proxy
+
+The external `docker-compose.yaml` could look like this:
+
+.. code-block:: yaml
+
+    services:
+      subdomain:
+        image: nginx:alpine
+        restart: unless-stopped
+        volumes:
+          - ./resources/frontend:/usr/share/nginx/html:ro
+        labels:
+          - "traefik.enable=true"
+          - "traefik.http.routers.subdomain.rule=Host(`subdomain.domain.com`)"
+          - "traefik.http.routers.subdomain.entrypoints=websecure"
+          - "traefik.http.routers.subdomain.tls=true"
+          - "traefik.http.routers.subdomain.tls.certresolver=letsencrypt"
+          - "traefik.http.services.subdomain.loadbalancer.server.port=80"
+          # HTTP → HTTPS redirect
+          - "traefik.http.routers.subdomain-http.rule=Host(`subdomain.domain.com`)"
+          - "traefik.http.routers.subdomain-http.entrypoints=web"
+          - "traefik.http.routers.subdomain-http.middlewares=redirect-https"
+          - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
+    
+        networks:
+          - traefik-proxy
+    
+    networks:
+      traefik-proxy:
+        external: true
+
+
+Traefik as reverse proxy (different host)
+-----------------------------------------
+
+This example is for when Traefik (reverse proxy) runs on a different server than the Mailu server.
+This example makes use of the File configuration method (File Provider) of Traefik.
+It makes use of a single static configuration file and one or more dynamic configuration files.
+
+This example uses V3 of Traefik. V2 and V3 of Traefik have some differences in the configuration method.
+
+The contents for the static configuration file. The static configuration file must be provided as argument to Traefik.
+
+.. code-block:: yaml
+
+  #STATIC CONFIGURATION FILE
+  #Below value for 'directory' is the location where the dynamic configuration files reside:
+  #When a change is made in this folder, Traefik automatically loads or reloads it.
+  providers:
+    file:
+      directory: "/etc/traefik/conf"
+
+  entryPoints:
+    web:
+      address: :80
+    websecure:
+      address: :443
+    mailu-smtp:
+      address: :25
+    mailu-imaps:
+      address: :993
+    mailu-pop3s:
+      address: :995
+    mailu-submissions:
+      address: :465
+    mailu-sieve:
+      address: :4190
+
+  #Optional, enables access logging at:
+  accessLog:
+    filePath: "/var/log/traefik_access.log"
+
+  #Optional, enables normal logging at:
+  log:
+    level: INFO
+    filePath: "/var/log/traefik.log"
+
+
+This is the contents for the dynamic configuration. You can use any filename you want.
+The extension must end with .yml and the file must be placed in the configured directory for
+dynamic configuration files.
+
+
+.. code-block:: yaml
+
+  http:
+    routers:
+      mailu-web:
+        entryPoints:
+          - web
+        rule: "Host(`mail.example.com) || PathPrefix(`/.well-known/acme-challenge/`))"
+        service: "mailu-web"
+    services:
+      mailu-web:
+        loadBalancer:
+          servers:
+            - url: "http://mailu-server"
+
+  tcp:
+    routers:
+      mailu-websecure:
+        entryPoints:
+          - websecure
+        # Add other FQDN's here
+        rule: "HostSNI(`mail.example.com`) || HostSNI(`autoconfig.example.com`) || HostSNI(`mta-sts.example.com`)"
+        service: "mailu-websecure"
+        tls:
+          passthrough: true
+      mailu-submissions:
+        entryPoints:
+          - mailu-submissions
+        rule: "HostSNI(`*`)"
+        service: "mailu-submissions"
+      mailu-imaps:
+        entryPoints:
+          - mailu-imaps
+        rule: "HostSNI(`*`)"
+        service: "mailu-imaps"
+        tls:
+          passthrough: true
+      mailu-pop3s:
+        entryPoints:
+          - mailu-pop3s
+        rule: "HostSNI(`*`)"
+        service: "mailu-pop3s"
+        tls:
+          passthrough: true
+      mailu-submissions:
+        entryPoints:
+          - mailu-submissions
+        rule: "HostSNI(`*`)"
+        service: "mailu-submissions"
+        tls:
+          passthrough: true
+      mailu-sieve:
+        entryPoints:
+          - mailu-sieve
+        rule: "HostSNI(`*`)"
+        service: "mailu-sieve"
+    services:
+      mailu-websecure:
+        loadBalancer:
+          proxyProtocol:
+            version: 2
+          servers:
+            - address: "mailu-server:443"
+      mailu-smtp:
+        loadBalancer:
+          proxyProtocol:
+            version: 2
+          servers:
+            - address: "mailu-server:25"
+      mailu-submissions:
+        loadBalancer:
+          proxyProtocol:
+            version: 2
+          servers:
+            - address: "mailu-server:465"
+      mailu-imaps:
+        loadBalancer:
+          proxyProtocol:
+            version: 2
+          servers:
+            - address: "mailu-server:993"
+      mailu-pop3s:
+        loadBalancer:
+          proxyProtocol:
+            version: 2
+          servers:
+            - address: "mailu-server:995"
+      mailu-sieve:
+        loadBalancer:
+          proxyProtocol:
+            version: 2
+          servers:
+            - address: "mailu-server:4190"
+
+
+In the mailu.env file add the following:
+
+
+.. code-block:: bash
+
+  #Add the IP address of the Traefik server as value for REAL_IP_FROM
+  REAL_IP_FROM=192.168.2.300/32
+  PROXY_PROTOCOL=25,443,465,993,995,4190
+  TLS_FLAVOR=letsencrypt
+  WEBROOT_REDIRECT=/sso/login
+
 
 Using the above configuration, Traefik will proxy all the traffic related to Mailu's FQDNs without requiring duplicate certificates.

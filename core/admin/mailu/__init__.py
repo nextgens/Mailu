@@ -5,26 +5,10 @@ import flask
 import flask_bootstrap
 
 from mailu import utils, debug, models, manage, configuration
-from gunicorn import glogging
+from mailu.gunicorn_logging import Logger, NoPingFilter
 import logging
 
 import hmac
-
-class NoPingFilter(logging.Filter):
-    def filter(self, record):
-        if (record.args['{host}i'] == 'localhost' and record.args['r'] == 'GET /ping HTTP/1.1'):
-            return False
-        if record.args['r'].endswith(' /internal/rspamd/local_domains HTTP/1.1'):
-            return False
-        return True
-
-class Logger(glogging.Logger):
-    def setup(self, cfg):
-        super().setup(cfg)
-
-        # Add filters to Gunicorn logger
-        logger = logging.getLogger("gunicorn.access")
-        logger.addFilter(NoPingFilter())
 
 def create_app_from_config(config):
     """ Create a new application based on the given configuration
@@ -40,7 +24,7 @@ def create_app_from_config(config):
     models.db.init_app(app)
     utils.session.init_app(app)
     utils.limiter.init_app(app)
-    utils.babel.init_app(app)
+    utils.babel.init_app(app, locale_selector=utils.get_locale)
     utils.login.init_app(app)
     utils.login.user_loader(models.User.get)
     utils.proxy.init_app(app)
@@ -52,13 +36,14 @@ def create_app_from_config(config):
     app.truncated_pw_key = hmac.new(bytearray(app.secret_key, 'utf-8'), bytearray('TRUNCATED_PW_KEY', 'utf-8'), 'sha256').digest()
 
     # Initialize list of translations
-    app.config.translations = {
-        str(locale): locale
-        for locale in sorted(
-            utils.babel.list_translations(),
-            key=lambda l: l.get_language_name().title()
-        )
-    }
+    with app.app_context():
+        app.config.translations = {
+            str(locale): locale
+            for locale in sorted(
+                utils.babel.list_translations(),
+                key=lambda l: l.get_language_name().title()
+            )
+        }
 
     # Initialize debugging tools
     if app.config.get("DEBUG"):
@@ -89,16 +74,41 @@ def create_app_from_config(config):
     def format_datetime(value):
         return utils.flask_babel.format_datetime(value) if value else ''
 
+    @app.template_filter()
+    def sieve_string(value):
+        # Escape a value for safe inclusion inside a Sieve quoted-string.
+        # RFC 5228 requires escaping '\' and '"'; we also escape '$' so a
+        # user-controlled value cannot inject Sieve variable expansion
+        # ('${...}', RFC 5229) once the "variables" extension is required.
+        # Backslash must be escaped first so the escapes we add aren't re-escaped.
+        return str(value).replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$')
+
     def ping():
         return ''
     app.route('/ping')(ping)
 
     # Import views
     from mailu import ui, internal, sso, api
+    from mailu.ui.views.users import wkd_lookup, wkd_policy
     app.register_blueprint(ui.ui, url_prefix=app.config['WEB_ADMIN'])
+    app.add_url_rule('/.well-known/openpgpkey/hu/<key_hash>', 'wkd_lookup', wkd_lookup)
+    app.add_url_rule('/.well-known/openpgpkey/<domain_name>/hu/<key_hash>', 'wkd_advanced_lookup', wkd_lookup)
+    app.add_url_rule('/.well-known/openpgpkey/policy', 'wkd_policy', wkd_policy)
+    app.add_url_rule('/.well-known/openpgpkey/<domain_name>/policy', 'wkd_advanced_policy', wkd_policy)
     app.register_blueprint(internal.internal, url_prefix='/internal')
     app.register_blueprint(sso.sso, url_prefix='/sso')
     api.register(app, web_api_root=app.config.get('WEB_API'))
+    @app.after_request
+    def add_wkd_cors_headers(response):
+        if flask.request.path.startswith('/.well-known/openpgpkey/'):
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            response.headers['Cache-Control'] = 'public, max-age=3600'
+        return response
+
+    from mailu.auth_flow import enforce_pending_actions
+    app.before_request(enforce_pending_actions)
     return app
 
 
@@ -107,4 +117,3 @@ def create_app():
     """
     config = configuration.ConfigManager()
     return create_app_from_config(config)
-

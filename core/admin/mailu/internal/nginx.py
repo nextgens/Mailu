@@ -14,16 +14,23 @@ STATUSES = {
         "imap": "AUTHENTICATIONFAILED",
         "smtp": "535 5.7.8",
         "submission": "535 5.7.8",
+        "lmtp": "535 5.7.8",
         "pop3": "-ERR Authentication failed",
         "sieve": "AuthFailed"
     }),
     "encryption": ("Must issue a STARTTLS command first", {
-        "smtp": "530 5.7.0"
+        "imap": "PRIVACYREQUIRED",
+        "smtp": "530 5.7.0",
+        "submission": "530 5.7.0",
+        "lmtp": "530 5.7.0",
+        "pop3": "-ERR Authentication canceled.",
+        "sieve": "ENCRYPT-NEEDED"
     }),
     "ratelimit": ("Temporary authentication failure (rate-limit)", {
         "imap": "LIMIT",
         "smtp": "451 4.3.2",
         "submission": "451 4.3.2",
+        "lmtp": "451 4.3.2",
         "pop3": "-ERR [LOGIN-DELAY] Retry later",
         "sieve": "AuthFailed"
     }),
@@ -49,9 +56,16 @@ def check_credentials(user, password, ip, protocol=None, auth_port=None, source_
                 else:
                     app.logger.info(f'Login attempt for: {user}/{protocol}/{auth_port} from: {ip}/{source_port}: failed: badip: token-{token.id}: {token.comment or ""!r}')
                     return False # we can return directly here since the token is valid
+        # an app-token-shaped secret that matched no token is a failure; do not fall
+        # through to the (expensive, rate-limit-exempt) password check
+        return False
     if user.check_password(password):
-        app.logger.info(f'Login attempt for: {user}/{protocol}/{auth_port} from: {ip}/{source_port}: success: password')
-        return True
+        if app.config['AUTH_REQUIRE_TOKENS'] and not protocol in ['web', 'sso']:
+            app.logger.info(f'Login attempt for: {user}/{protocol}/{auth_port} from: {ip}/{source_port}: failed: password ok, but a token is required')
+            return False
+        else:
+            app.logger.info(f'Login attempt for: {user}/{protocol}/{auth_port} from: {ip}/{source_port}: success: password')
+            return True
     app.logger.info(f'Login attempt for: {user}/{protocol}/{auth_port} from: {ip}/{source_port}: failed: badauth: {utils.truncated_pw_hash(password)}')
     return False
 
@@ -64,7 +78,7 @@ def handle_authentication(headers):
     # Incoming mail, no authentication
     if method in ['', 'none'] and protocol in ['smtp', 'lmtp']:
         server, port = get_server(protocol, False)
-        if app.config["INBOUND_TLS_ENFORCE"]:
+        if app.config["INBOUND_TLS_ENFORCE"] and protocol == 'smtp':
             if "Auth-SSL" in headers and headers["Auth-SSL"] == "on":
                 return {
                     "Auth-Status": "OK",
@@ -87,26 +101,20 @@ def handle_authentication(headers):
     # Authenticated user
     elif method in ['plain', 'login']:
         is_valid_user = False
-        # According to RFC2616 section 3.7.1 and PEP 3333, HTTP headers should
-        # be ASCII and are generally considered ISO8859-1. However when passing
-        # the password, nginx does not transcode the input UTF string, thus
-        # we need to manually decode.
-        raw_user_email = urllib.parse.unquote(headers["Auth-User"])
-        raw_password = urllib.parse.unquote(headers["Auth-Pass"])
         user_email = 'invalid'
         password = 'invalid'
         try:
-            user_email = raw_user_email.encode("iso8859-1").decode("utf8")
-            password = raw_password.encode("iso8859-1").decode("utf8")
+            user_email = urllib.parse.unquote(headers["Auth-User"])
+            password = urllib.parse.unquote(headers["Auth-Pass"])
             ip = urllib.parse.unquote(headers["Client-Ip"])
         except:
-            app.logger.warn(f'Received undecodable user/password from nginx: {raw_user_email!r}/{raw_password!r}')
+            app.logger.warning(f'Received undecodable user/password from front: {headers.get("Auth-User", "")!r}')
         else:
             try:
-                user = models.User.query.get(user_email) if '@' in user_email else None
+                user = models.db.session.get(models.User, user_email) if '@' in user_email else None
             except sqlalchemy.exc.StatementError as exc:
                 exc = str(exc).split('\n', 1)[0]
-                app.logger.warn(f'Invalid user {user_email!r}: {exc}')
+                app.logger.warning(f'Invalid user {user_email!r}: {exc}')
             else:
                 is_valid_user = user is not None
                 ip = urllib.parse.unquote(headers["Client-Ip"])
@@ -148,7 +156,9 @@ def get_server(protocol, authenticated=False):
         else:
             hostname, port = app.config['SMTP_ADDRESS'], 25
     elif protocol == 'submission':
-        hostname, port = app.config['SMTP_ADDRESS'], 10025
+        # Dovecot on the IMAP service owns the mailbox storage and handles
+        # BURL/URLAUTH before relaying the message to Postfix.
+        hostname, port = app.config['IMAP_ADDRESS'], 2587
     elif protocol == 'lmtp':
         hostname, port = app.config['IMAP_ADDRESS'], 2525
     elif protocol == 'sieve':

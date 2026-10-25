@@ -1,13 +1,24 @@
+import flask
 from flask_restx import Resource, fields, marshal
-import validators, datetime
+import datetime
+import secrets
 
 from . import api, response_fields
 from .. import common
-from ... import models
+from ... import models, utils, setup_tokens
 
 db = models.db
 
 user = api.namespace('user', description='User operations')
+
+def parse_reply_date(value):
+    """ Parse a reply date given as 'YYYY-MM-DD'. Returns a datetime, or None when
+        the value is not a well-formed, in-range date. """
+    try:
+        year, month, day = value.split('-')
+        return datetime.datetime(int(year), int(month), int(day))
+    except (ValueError, TypeError, AttributeError):
+        return None
 
 user_fields_get = api.model('UserGet', {
     'email': fields.String(description='The email address of the user', example='John.Doe@example.com', attribute='_email'),
@@ -18,11 +29,12 @@ user_fields_get = api.model('UserGet', {
     'global_admin': fields.Boolean(description='Make the user a global administrator'),
     'enabled': fields.Boolean(description='Enable the user. When an user is disabled, the user is unable to login to the Admin GUI or webmail or access his email via IMAP/POP3 or send mail'),
     'change_pw_next_login': fields.Boolean(description='Force the user to change their password at next login'),
+    'passkey_enroll_next_login': fields.Boolean(description='Require the user to set up a passkey before continuing after their next login'),
     'enable_imap': fields.Boolean(description='Allow email retrieval via IMAP'),
     'enable_pop': fields.Boolean(description='Allow email retrieval via POP3'),
     'allow_spoofing': fields.Boolean(description='Allow the user to spoof the sender (send email as anyone)'),
     'forward_enabled': fields.Boolean(description='Enable auto forwarding'),
-    'forward_destination': fields.List(fields.String(description='Email address to forward emails to'), example='Other@example.com'),
+    'forward_destination': fields.List(fields.String(description='Email address to forward emails to'), example='["Other@example.com"]'),
     'forward_keep': fields.Boolean(description='Keep a copy of the forwarded email in the inbox'),
     'reply_enabled': fields.Boolean(description='Enable automatic replies. This is also known as out of office (ooo) or out of facility (oof) replies'),
     'reply_subject': fields.String(description='Optional subject for the automatic reply', example='Out of office'),
@@ -37,17 +49,18 @@ user_fields_get = api.model('UserGet', {
 
 user_fields_post = api.model('UserCreate', {
     'email': fields.String(description='The email address of the user', example='John.Doe@example.com', attribute='_email', required=True),
-    'raw_password': fields.String(description='The raw (plain text) password of the user. Mailu will hash the password using BCRYPT-SHA256', example='secret', required=True),
+    'raw_password': fields.String(description='Optional raw (plain text) password. Mailu will hash the password using BCRYPT-SHA256', example='secret'),
     'comment': fields.String(description='A description for the user. This description is shown on the Users page', example='my comment'),
     'quota_bytes': fields.Integer(description='The maximum quota for the user’s email box in bytes', example='1000000000'),
     'global_admin': fields.Boolean(description='Make the user a global administrator'),
     'enabled': fields.Boolean(description='Enable the user. When an user is disabled, the user is unable to login to the Admin GUI or webmail or access his email via IMAP/POP3 or send mail'),
     'change_pw_next_login': fields.Boolean(description='Force the user to change their password at next login'),
+    'passkey_enroll_next_login': fields.Boolean(description='Require the user to set up a passkey before continuing after their next login'),
     'enable_imap': fields.Boolean(description='Allow email retrieval via IMAP'),
     'enable_pop': fields.Boolean(description='Allow email retrieval via POP3'),
     'allow_spoofing': fields.Boolean(description='Allow the user to spoof the sender (send email as anyone)'),
     'forward_enabled': fields.Boolean(description='Enable auto forwarding'),
-    'forward_destination': fields.List(fields.String(description='Email address to forward emails to'), example='Other@example.com'),
+    'forward_destination': fields.List(fields.String(description='Email address to forward emails to'), example='["Other@example.com"]'),
     'forward_keep': fields.Boolean(description='Keep a copy of the forwarded email in the inbox'),
     'reply_enabled': fields.Boolean(description='Enable automatic replies. This is also known as out of office (ooo) or out of facility (oof) replies'),
     'reply_subject': fields.String(description='Optional subject for the automatic reply', example='Out of office'),
@@ -67,11 +80,12 @@ user_fields_put = api.model('UserUpdate', {
     'global_admin': fields.Boolean(description='Make the user a global administrator'),
     'enabled': fields.Boolean(description='Enable the user. When an user is disabled, the user is unable to login to the Admin GUI or webmail or access his email via IMAP/POP3 or send mail'),
     'change_pw_next_login': fields.Boolean(description='Force the user to change their password at next login'),
+    'passkey_enroll_next_login': fields.Boolean(description='Require the user to set up a passkey before continuing after their next login'),
     'enable_imap': fields.Boolean(description='Allow email retrieval via IMAP'),
     'enable_pop': fields.Boolean(description='Allow email retrieval via POP3'),
     'allow_spoofing': fields.Boolean(description='Allow the user to spoof the sender (send email as anyone)'),
     'forward_enabled': fields.Boolean(description='Enable auto forwarding'),
-    'forward_destination': fields.List(fields.String(description='Email address to forward emails to'), example='Other@example.com'),
+    'forward_destination': fields.List(fields.String(description='Email address to forward emails to'), example='["Other@example.com"]'),
     'forward_keep': fields.Boolean(description='Keep a copy of the forwarded email in the inbox'),
     'reply_enabled': fields.Boolean(description='Enable automatic replies. This is also known as out of office (ooo) or out of facility (oof) replies'),
     'reply_subject': fields.String(description='Optional subject for the automatic reply', example='Out of office'),
@@ -87,34 +101,52 @@ user_fields_put = api.model('UserUpdate', {
 
 @user.route('')
 class Users(Resource):
-    @user.doc('list_users')
+    @user.doc('list_user')
     @user.marshal_with(user_fields_get, as_list=True, skip_none=True, mask=None)
+    @user.doc(responses={401: 'Authorization header missing', 403: 'Invalid authorization header'})
     @user.doc(security='Bearer')
     @common.api_token_authorization
     def get(self):
-        "List users"
+        "List all users"
         return models.User.query.all()
 
     @user.doc('create_user')
     @user.expect(user_fields_post)
     @user.response(200, 'Success', response_fields)
-    @user.response(400, 'Input validation exception')
+    @user.response(400, 'Input validation exception', response_fields)
+    @user.doc(responses={401: 'Authorization header missing', 403: 'Invalid authorization header'})
     @user.response(409, 'Duplicate user', response_fields)
     @user.doc(security='Bearer')
     @common.api_token_authorization
     def post(self):
-        """ Create user """
+        """ Create a new user """
         data = api.payload
-        if not validators.email(data['email']):
+        if not utils.is_valid_email(data['email']):
             return { 'code': 400, 'message': f'Provided email address {data["email"]} is not a valid email address'}, 400
+        if 'forward_destination' in data and len(data['forward_destination']) > 0:
+            for dest in data['forward_destination']:
+                if not utils.is_valid_email(dest):
+                    return { 'code': 400, 'message': f'Provided forward destination email address {dest} is not a valid email address'}, 400
         localpart, domain_name = data['email'].lower().rsplit('@', 1)
-        domain_found = models.Domain.query.get(domain_name)
+        domain_found = models.db.session.get(models.Domain, domain_name)
         if not domain_found:
             return { 'code': 404, 'message': f'Domain {domain_name} does not exist'}, 404
+        if not domain_found.max_users == -1 and len(domain_found.users) >= domain_found.max_users:
+            return { 'code': 409, 'message': f'Too many users for domain {domain_name}'}, 409
+        email_found = models.User.query.filter_by(email=data['email']).first()
+        if email_found:
+            return { 'code': 409, 'message': f'User {data["email"]} already exists'}, 409
+        if 'forward_enabled' in data and data['forward_enabled'] is True:
+            if ('forward_destination' in data and len(data['forward_destination']) == 0) or 'forward_destination' not in data:
+                return { 'code': 400, 'message': f'forward_destination is mandatory when forward_enabled is true'}, 400
 
         user_new = models.User(email=data['email'])
         if 'raw_password' in data:
             user_new.set_password(data['raw_password'])
+        else:
+            # Passwordless API-created accounts need a stored hash until the
+            # account owner chooses a password or registers a passkey.
+            user_new.set_password(secrets.token_urlsafe(32))
         if 'comment' in data:
             user_new.comment = data['comment']
         if 'quota_bytes' in data:
@@ -125,6 +157,8 @@ class Users(Resource):
             user_new.enabled = data['enabled']
         if 'change_pw_next_login' in data:
             user_new.change_pw_next_login = data['change_pw_next_login']
+        if 'passkey_enroll_next_login' in data:
+            user_new.passkey_enroll_next_login = data['passkey_enroll_next_login']
         if 'enable_imap' in data:
             user_new.enable_imap = data['enable_imap']
         if 'enable_pop' in data:
@@ -133,7 +167,7 @@ class Users(Resource):
             user_new.allow_spoofing = data['allow_spoofing']
         if 'forward_enabled' in data:
             user_new.forward_enabled = data['forward_enabled']
-        if 'forward_destination' in data:
+        if 'forward_destination' in data and len(data['forward_destination']) > 0:
             user_new.forward_destination = data['forward_destination']
         if 'forward_keep' in data:
             user_new.forward_keep = data['forward_keep']
@@ -144,12 +178,14 @@ class Users(Resource):
         if 'reply_body' in data:
             user_new.reply_body = data['reply_body']
         if 'reply_startdate' in data:
-            year, month, day = data['reply_startdate'].split('-')
-            date = datetime.datetime(int(year), int(month), int(day))
+            date = parse_reply_date(data['reply_startdate'])
+            if date is None:
+                return { 'code': 400, 'message': f'Provided reply_startdate {data["reply_startdate"]!r} is not a valid date (expected YYYY-MM-DD)'}, 400
             user_new.reply_startdate = date
         if 'reply_enddate' in data:
-            year, month, day = data['reply_enddate'].split('-')
-            date = datetime.datetime(int(year), int(month), int(day))
+            date = parse_reply_date(data['reply_enddate'])
+            if date is None:
+                return { 'code': 400, 'message': f'Provided reply_enddate {data["reply_enddate"]!r} is not a valid date (expected YYYY-MM-DD)'}, 400
             user_new.reply_enddate = date
         if 'displayed_name' in data:
             user_new.displayed_name = data['displayed_name']
@@ -164,17 +200,18 @@ class Users(Resource):
 
         return {'code': 200,'message': f'User {data["email"]} has been created'}, 200
 
-
 @user.route('/<string:email>')
 class User(Resource):
     @user.doc('find_user')
+    @user.response(200, 'Success', user_fields_get)
     @user.response(400, 'Input validation exception', response_fields)
+    @user.doc(responses={401: 'Authorization header missing', 403: 'Invalid authorization header'})
     @user.response(404, 'User not found', response_fields)
     @user.doc(security='Bearer')
     @common.api_token_authorization
     def get(self, email):
-        """ Find user """
-        if not validators.email(email):
+        """ Look up the specified user """
+        if not utils.is_valid_email(email):
             return { 'code': 400, 'message': f'Provided email address {email} is not a valid email address'}, 400
 
         email_found = models.User.query.filter_by(email=email).first()
@@ -186,18 +223,25 @@ class User(Resource):
     @user.expect(user_fields_put)
     @user.response(200, 'Success', response_fields)
     @user.response(400, 'Input validation exception', response_fields)
+    @user.doc(responses={401: 'Authorization header missing', 403: 'Invalid authorization header'})
     @user.response(404, 'User not found', response_fields)
-    @user.response(409, 'Duplicate user', response_fields)
     @user.doc(security='Bearer')
     @common.api_token_authorization
     def patch(self, email):
-        """ Update user """
+        """ Update the specified user """
         data = api.payload
-        if not validators.email(email):
-            return { 'code': 400, 'message': f'Provided email address {data["email"]} is not a valid email address'}, 400
-        user_found = models.User.query.get(email)
+        if not utils.is_valid_email(email):
+            return { 'code': 400, 'message': f'Provided email address {email} is not a valid email address'}, 400
+        if 'forward_destination' in data and len(data['forward_destination']) > 0:
+            for dest in data['forward_destination']:
+                if not utils.is_valid_email(dest):
+                    return { 'code': 400, 'message': f'Provided forward destination email address {dest} is not a valid email address'}, 400
+        user_found = models.db.session.get(models.User, email)
         if not user_found:
             return {'code': 404, 'message': f'User {email} cannot be found'}, 404
+        if ('forward_enabled' in data and data['forward_enabled'] is True) or ('forward_enabled' not in data and user_found.forward_enabled):
+            if ('forward_destination' in data and len(data['forward_destination']) == 0):
+                return { 'code': 400, 'message': f'forward_destination is mandatory when forward_enabled is true'}, 400
 
         if 'raw_password' in data:
             user_found.set_password(data['raw_password'])
@@ -211,6 +255,8 @@ class User(Resource):
             user_found.enabled = data['enabled']
         if 'change_pw_next_login' in data:
             user_found.change_pw_next_login = data['change_pw_next_login']
+        if 'passkey_enroll_next_login' in data:
+            user_found.passkey_enroll_next_login = data['passkey_enroll_next_login']
         if 'enable_imap' in data:
             user_found.enable_imap = data['enable_imap']
         if 'enable_pop' in data:
@@ -219,7 +265,7 @@ class User(Resource):
             user_found.allow_spoofing = data['allow_spoofing']
         if 'forward_enabled' in data:
             user_found.forward_enabled = data['forward_enabled']
-        if 'forward_destination' in data:
+        if 'forward_destination' in data and len(data['forward_destination']) > 0:
             user_found.forward_destination = data['forward_destination']
         if 'forward_keep' in data:
             user_found.forward_keep = data['forward_keep']
@@ -230,12 +276,14 @@ class User(Resource):
         if 'reply_body' in data:
             user_found.reply_body = data['reply_body']
         if 'reply_startdate' in data:
-            year, month, day = data['reply_startdate'].split('-')
-            date = datetime.datetime(int(year), int(month), int(day))
+            date = parse_reply_date(data['reply_startdate'])
+            if date is None:
+                return { 'code': 400, 'message': f'Provided reply_startdate {data["reply_startdate"]!r} is not a valid date (expected YYYY-MM-DD)'}, 400
             user_found.reply_startdate = date
         if 'reply_enddate' in data:
-            year, month, day = data['reply_enddate'].split('-')
-            date = datetime.datetime(int(year), int(month), int(day))
+            date = parse_reply_date(data['reply_enddate'])
+            if date is None:
+                return { 'code': 400, 'message': f'Provided reply_enddate {data["reply_enddate"]!r} is not a valid date (expected YYYY-MM-DD)'}, 400
             user_found.reply_enddate = date
         if 'displayed_name' in data:
             user_found.displayed_name = data['displayed_name']
@@ -254,12 +302,13 @@ class User(Resource):
     @user.doc('delete_user')
     @user.response(200, 'Success', response_fields)
     @user.response(400, 'Input validation exception', response_fields)
+    @user.doc(responses={401: 'Authorization header missing', 403: 'Invalid authorization header'})
     @user.response(404, 'User not found', response_fields)
     @user.doc(security='Bearer')
     @common.api_token_authorization
     def delete(self, email):
-        """ Delete user """
-        if not validators.email(email):
+        """ Delete the specified user """
+        if not utils.is_valid_email(email):
             return { 'code': 400, 'message': f'Provided email address {email} is not a valid email address'}, 400
 
         email_found = models.User.query.filter_by(email=email).first()
@@ -268,3 +317,40 @@ class User(Resource):
         db.session.delete(email_found)
         db.session.commit()
         return { 'code': 200, 'message': f'User {email} has been deleted'}, 200
+
+
+setup_link_response = api.model('AccountSetupLinkResponse', {
+    'code': fields.Integer,
+    'message': fields.String,
+    'url': fields.String(description='Single-use account setup or recovery URL'),
+    'expires_at': fields.DateTime(description='Expiration time in UTC'),
+})
+
+
+@user.route('/<string:email>/setup-link')
+class UserSetupLink(Resource):
+    @user.doc('generate_user_setup_link')
+    @user.response(200, 'Single-use setup link generated', setup_link_response)
+    @user.response(400, 'Invalid email address', response_fields)
+    @user.response(401, 'Authorization header missing')
+    @user.response(403, 'Invalid authorization header')
+    @user.response(404, 'User not found', response_fields)
+    @user.doc(security='Bearer')
+    @common.api_token_authorization
+    def post(self, email):
+        """Generate a single-use account setup or recovery link for a user."""
+        if not utils.is_valid_email(email):
+            return {'code': 400, 'message': f'Provided email address {email} is not valid'}, 400
+        account = models.db.session.get(models.User, email)
+        if not account:
+            return {'code': 404, 'message': f'User {email} cannot be found'}, 404
+        raw_token, expires_at = setup_tokens.issue(
+            account, flask.current_app.config['ACCOUNT_SETUP_TOKEN_TTL'],
+        )
+        models.db.session.commit()
+        return {
+            'code': 200,
+            'message': f'Account setup link generated for {email}',
+            'url': flask.url_for('sso.account_setup', token=raw_token, _external=True),
+            'expires_at': expires_at,
+        }, 200

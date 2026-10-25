@@ -8,11 +8,8 @@ Mailu
 .. image:: https://img.shields.io/github/stars/mailu/mailu.svg?label=github&logo=github&maxAge=2592000
    :target: https://github.com/mailu/mailu
 
-.. image:: https://img.shields.io/docker/pulls/mailu/admin.svg?label=docker&maxAge=2592000
-   :target: https://hub.docker.com/u/mailu/
-
-.. image:: https://img.shields.io/badge/matrix-%23mailu%3Atedomum.net-7bc9a4.svg
-   :target: https://matrix.to/#/#mailu:tedomum.net
+.. image:: https://img.shields.io/badge/Mailu-latest_release-blue
+   :target: https://github.com/Mailu/Mailu/releases
 
 Mailu is a simple yet full-featured mail server as a set of Docker images.
 It is free software (both as in free beer and as in free speech), open to
@@ -26,7 +23,7 @@ Main features include:
 - **Standard email server**, IMAP and IMAP+, SMTP and Submission with auto-configuration profiles for clients
 - **Advanced email features**, aliases, domain aliases, custom routing, full-text search of email attachments
 - **Web access**, multiple Webmails and administration interface
-- **User features**, aliases, auto-reply, auto-forward, fetched accounts, managesieve
+- **User features**, aliases, auto-reply, auto-forward, fetched accounts, managesieve, OpenPGP key publication through WKD
 - **Admin features**, global admins, announcements, per-domain delegation, quotas
 - **Security**, enforced TLS, DANE, MTA-STS, Letsencrypt!, outgoing DKIM, anti-virus scanner, `Snuffleupagus <https://github.com/jvoisin/snuffleupagus/>`_, block malicious attachments
 - **Antispam**, auto-learn, greylisting, DMARC and SPF, anti-spoofing
@@ -44,6 +41,7 @@ the version of Mailu that you are running.
 
    general
    features
+   imap-metadata
    faq
    releases
    demo
@@ -68,6 +66,7 @@ the version of Mailu that you are running.
     maintain
     webadministration
     antispam
+    anonmail
     cli
     api
 
@@ -81,3 +80,4 @@ the version of Mailu that you are running.
     contributors/database
     contributors/memo
     contributors/localization
+    contributors/firewalling

@@ -9,26 +9,32 @@ COPY snappymail/pubkey.asc /tmp/snappymail.asc
 COPY roundcube/pubkey.asc /tmp/roundcube.asc
 COPY roundcube/roundcube.diff /tmp/roundcube.diff
 
+# roundcube's bin/*.sh need an unversioned /usr/bin/php, which alpine ships
+# only for its current default. And enchant reports "no dictionaries" rather
+# than failing, so the check below catches a bad aspell-*/backend pairing.
 RUN set -euxo pipefail \
   ; apk add --no-cache \
     nginx gpg gpg-agent patch \
-    php81 php81-fpm php81-mbstring php81-zip php81-xml php81-simplexml php81-pecl-apcu \
-    php81-dom php81-curl php81-exif gd php81-gd php81-iconv php81-intl php81-openssl php81-ctype \
-    php81-pdo_sqlite php81-pdo_mysql php81-pdo_pgsql php81-pdo php81-sodium libsodium php81-tidy php81-pecl-uuid \
-    php81-pspell php81-pecl-imagick php81-opcache php81-session php81-sockets php81-fileinfo php81-xmlreader php81-xmlwriter \
+    php84 php84-fpm php84-mbstring php84-zip php84-xml php84-simplexml php84-pecl-apcu \
+    php84-dom php84-curl php84-exif gd php84-gd php84-iconv php84-intl php84-openssl php84-ctype \
+    php84-pdo_sqlite php84-pdo_mysql php84-pdo_pgsql php84-pdo php84-sodium libsodium php84-tidy \
+    php84-enchant enchant2 php84-opcache php84-session php84-sockets php84-fileinfo php84-xmlreader php84-xmlwriter \
     aspell-uk aspell-ru aspell-fr aspell-de aspell-en \
+  ; ln -sf /usr/bin/php84 /usr/bin/php \
+  ; php -v | head -1 | grep -q '^PHP 8\.4\.' \
+  ; php84 -r 'exit(enchant_broker_list_dicts(enchant_broker_init()) ? 0 : 1);' \
   ; rm /etc/nginx/http.d/default.conf \
-  ; rm /etc/php81/php-fpm.d/www.conf \
+  ; rm /etc/php84/php-fpm.d/www.conf \
   ; mkdir -m 700 /root/.gnupg/ \
   ; gpg --import /tmp/snappymail.asc \
   ; gpg --import /tmp/roundcube.asc \
-  ; echo extension=snuffleupagus > /etc/php81/conf.d/snuffleupagus.ini \
+  ; echo extension=snuffleupagus > /etc/php84/conf.d/snuffleupagus.ini \
   ; rm -f /tmp/roundcube.asc /tmp/snappymail.asc \
   ; mkdir -p /run/nginx /conf
 
 # roundcube
-ENV ROUNDCUBE_URL https://github.com/roundcube/roundcubemail/releases/download/1.6.4/roundcubemail-1.6.4-complete.tar.gz
-ENV CARDDAV_URL https://github.com/mstilkerich/rcmcarddav/releases/download/v5.1.0/carddav-v5.1.0.tar.gz
+ENV ROUNDCUBE_URL=https://github.com/roundcube/roundcubemail/releases/download/1.6.20/roundcubemail-1.6.20-complete.tar.gz
+ENV CARDDAV_URL=https://github.com/mstilkerich/rcmcarddav/releases/download/v5.1.3/carddav-v5.1.3.tar.gz
 
 RUN set -euxo pipefail \
   ; cd /var/www \
@@ -53,7 +59,7 @@ COPY roundcube/config/config.inc.carddav.php /var/www/roundcube/plugins/carddav/
 
 # snappymail
 
-ENV SNAPPYMAIL_URL https://github.com/the-djmaze/snappymail/releases/download/v2.29.1/snappymail-2.29.1.tar.gz
+ENV SNAPPYMAIL_URL=https://github.com/the-djmaze/snappymail/releases/download/v2.38.2/snappymail-2.38.2.tar.gz
 
 RUN set -euxo pipefail \
   ; mkdir  /var/www/snappymail \
@@ -66,6 +72,7 @@ RUN set -euxo pipefail \
 # SnappyMail login
 COPY snappymail/login/include.php /var/www/snappymail/
 COPY snappymail/login/sso.php /var/www/snappymail/
+COPY snappymail/plugins/mailu-identities/ /var/www/snappymail/mailu-plugins/mailu-identities/
 
 # Parsed and moved at startup
 COPY snappymail/defaults/application.ini /defaults/
@@ -83,7 +90,7 @@ RUN set -euxo pipefail \
 # common
 COPY start.py /
 COPY php.ini /defaults/
-COPY php-webmail.conf /etc/php81/php-fpm.d/
+COPY php-webmail.conf /etc/php84/php-fpm.d/
 COPY nginx-webmail.conf /conf/
 COPY snuffleupagus.rules /etc/snuffleupagus.rules.tpl
 
@@ -93,6 +100,6 @@ VOLUME /overrides
 
 CMD /start.py
 
-HEALTHCHECK CMD curl -f -L http://localhost/ping || exit 1
+HEALTHCHECK CMD curl -m3 -f -L http://localhost/ping || exit 1
 
 RUN echo $VERSION >> /version

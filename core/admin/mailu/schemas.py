@@ -34,6 +34,14 @@ from mailu import models, dkim
 ma = Marshmallow()
 
 
+class ContextNested(fields.Nested):
+    def _bind_to_schema(self, field_name, parent):
+        super()._bind_to_schema(field_name, parent)
+        nested = self.nested
+        if isinstance(nested, type) and issubclass(nested, Schema):
+            self.nested = lambda: nested(context=parent.context)
+
+
 ### import logging and schema colorization ###
 
 _model2schema = {}
@@ -110,11 +118,6 @@ class Logger:
             sqlalchemy.event.listen(model, 'after_update', self._listen_update)
             sqlalchemy.event.listen(model, 'after_delete', self._listen_delete)
 
-        # special listener for dkim_key changes
-        # TODO: _listen_dkim can be removed when dkim keys are stored in database
-        self._dedupe_dkim = set()
-        sqlalchemy.event.listen(models.db.session, 'after_flush', self._listen_dkim)
-
         # register debug logger for sqlalchemy
         if self.debug:
             logging.basicConfig()
@@ -187,29 +190,6 @@ class Logger:
         self._counter.update([('Deleted', target.__table__.name)])
         if self.verbose:
             self._log('Deleted', target)
-
-    # TODO: _listen_dkim can be removed when dkim keys are stored in database
-    def _listen_dkim(self, session, flush_context): # pylint: disable=unused-argument
-        """ callback method to track import """
-        for target in session.identity_map.values():
-            # look at Domains originally loaded from db
-            if not isinstance(target, models.Domain) or not target._sa_instance_state.load_path:
-                continue
-            before = target._dkim_key_on_disk
-            after = target._dkim_key
-            # "de-dupe" messages; this event is fired at every flush
-            if before == after or (target, before, after) in self._dedupe_dkim:
-                continue
-            self._dedupe_dkim.add((target, before, after))
-            self._counter.update([('Modified', target.__table__.name)])
-            if self.verbose:
-                if self.secrets:
-                    before = before.decode('ascii', 'ignore')
-                    after = after.decode('ascii', 'ignore')
-                else:
-                    before = HIDDEN if before else ''
-                    after = HIDDEN if after else ''
-                self._log('Modified', target, f'{str(target)!r} dkim_key: {before!r} -> {after!r}')
 
     def track_serialize(self, obj, item, backref=None):
         """ callback method to track import """
@@ -683,12 +663,12 @@ class Storage:
 class BaseOpts(SQLAlchemyAutoSchemaOpts):
     """ Option class with sqla session
     """
-    def __init__(self, meta, ordered=False):
+    def __init__(self, meta):
         if not hasattr(meta, 'sqla_session'):
             meta.sqla_session = models.db.session
         if not hasattr(meta, 'sibling'):
             meta.sibling = False
-        super(BaseOpts, self).__init__(meta, ordered=ordered)
+        super(BaseOpts, self).__init__(meta)
 
 class BaseSchema(ma.SQLAlchemyAutoSchema, Storage):
     """ Marshmallow base schema with custom exclude logic
@@ -711,7 +691,8 @@ class BaseSchema(ma.SQLAlchemyAutoSchema, Storage):
         only = set(kwargs.get('only') or [])
 
         # get context
-        context = kwargs.get('context', {})
+        context = kwargs.pop('context', {})
+        self.context = context
         flags = {key for key, value in context.items() if value is True}
 
         # compile excludes
@@ -774,9 +755,10 @@ class BaseSchema(ma.SQLAlchemyAutoSchema, Storage):
                     fieldlist[field] = fieldlist.pop(field)
 
         # move post_load hook "_add_instance" to the end (after load_instance mixin)
-        hooks = self._hooks[('post_load', False)]
-        hooks.remove('_add_instance')
-        hooks.append('_add_instance')
+        hooks = self._hooks['post_load']
+        add_instance_hook = next(hook for hook in hooks if hook[0] == '_add_instance')
+        hooks.remove(add_instance_hook)
+        hooks.append(add_instance_hook)
 
     def hide(self, data):
         """ helper method to hide input data for logging """
@@ -814,7 +796,7 @@ class BaseSchema(ma.SQLAlchemyAutoSchema, Storage):
         res = super().get_instance(data)
         return res
 
-    @pre_load(pass_many=True)
+    @pre_load(pass_collection=True)
     def _patch_many(self, items, many, **kwargs): # pylint: disable=unused-argument
         """ - flush sqla session before serializing a section when requested
               (make sure all objects that could be referred to later are created)
@@ -997,7 +979,7 @@ class BaseSchema(ma.SQLAlchemyAutoSchema, Storage):
 
         return data
 
-    @post_load(pass_many=True)
+    @post_load(pass_collection=True)
     def _prune_items(self, items, many, **kwargs): # pylint: disable=unused-argument
         """ handle list pruning """
 
@@ -1113,6 +1095,9 @@ class DomainSchema(BaseSchema):
         include_relationships = True
         exclude = ['users', 'managers', 'aliases']
 
+        # Anonymous Email Service domain flags
+        anonmail_enabled = fields.Boolean(load_default=False, dump_default=False)
+
         include_by_context = {
             ('dns',): {'dkim_publickey', 'dns_mx', 'dns_spf', 'dns_dkim', 'dns_dmarc'},
         }
@@ -1148,7 +1133,7 @@ class TokenSchema(BaseSchema):
         sibling = True
 
     password = PasswordField(required=True, metadata={'model': models.User})
-    hash_password = fields.Boolean(load_only=True, missing=False)
+    hash_password = fields.Boolean(load_only=True, load_default=False)
 
 
 @mapped
@@ -1189,11 +1174,11 @@ class UserSchema(BaseSchema):
         }
 
     email = fields.String(required=True)
-    tokens = fields.Nested(TokenSchema, many=True)
-    fetches = fields.Nested(FetchSchema, many=True)
+    tokens = ContextNested(TokenSchema, many=True)
+    fetches = ContextNested(FetchSchema, many=True)
 
     password = PasswordField(required=True, metadata={'model': models.User})
-    hash_password = fields.Boolean(load_only=True, missing=False)
+    hash_password = fields.Boolean(load_only=True, load_default=False)
 
 
 @mapped
@@ -1212,6 +1197,14 @@ class AliasSchema(BaseSchema):
 
     email = fields.String(required=True)
     destination = CommaSeparatedListField()
+
+    # Anonymous Email Service metadata
+    note = fields.String(allow_none=True)
+    hostname = fields.String(allow_none=True)
+    owner_email = fields.String(allow_none=True, dump_only=True)
+    # No load_default: in merge mode (config-import --update) an omitted field must
+    # keep the stored value. On create the model column default (False) applies.
+    disabled = fields.Boolean(dump_default=False)
 
 
 @mapped
@@ -1243,6 +1236,7 @@ class MailuSchema(Schema, Storage):
         order = ['domain', 'user', 'alias', 'relay'] # 'config'
 
     def __init__(self, *args, **kwargs):
+        self.context = kwargs.pop('context', {})
         super().__init__(*args, **kwargs)
         # order fieldlists
         for fieldlist in (self.fields, self.load_fields, self.dump_fields):
@@ -1273,8 +1267,8 @@ class MailuSchema(Schema, Storage):
 
         return config
 
-    domain = fields.Nested(DomainSchema, many=True)
-    user = fields.Nested(UserSchema, many=True)
-    alias = fields.Nested(AliasSchema, many=True)
-    relay = fields.Nested(RelaySchema, many=True)
+    domain = ContextNested(DomainSchema, many=True)
+    user = ContextNested(UserSchema, many=True)
+    alias = ContextNested(AliasSchema, many=True)
+    relay = ContextNested(RelaySchema, many=True)
 #    config = fields.Nested(ConfigSchema, many=True)

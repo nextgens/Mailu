@@ -8,28 +8,50 @@ import re
 import sqlalchemy.exc
 import srslib
 
+def _unsupported_address(address, require_mailbox=False):
+    """ Return True for a lookup key Mailu cannot resolve: an address with
+    more than one ``@`` or a quoted local part. Binding such a key in
+    ``resolve_destination`` lets ``IdnaEmail.process_bind_param`` raise (the
+    local part still contains an ``@``), which SQLAlchemy surfaces as a
+    ``StatementError`` and 500s the endpoint. Postfix then treats the lookup as
+    a temporary failure and retries — tripping the sender rate limit (#3252).
+    The resolve-path endpoints must answer 404 instead. """
+    if ((require_mailbox and address.count('@') != 1)
+            or address.count('@') > 1 or address.startswith('"')):
+        return True
+    domain = address.rsplit('@', 1)[-1]
+    try:
+        idna.encode(domain.lower())
+    except idna.IDNAError:
+        return True
+    return False
+
 @internal.route("/postfix/dane/<domain_name>")
 def postfix_dane_map(domain_name):
     return flask.jsonify('dane-only') if utils.has_dane_record(domain_name) else flask.abort(404)
 
 @internal.route("/postfix/domain/<domain_name>")
 def postfix_mailbox_domain(domain_name):
-    if re.match("^\[.*\]$", domain_name):
+    if _unsupported_address(domain_name) or re.match(r'^\[.*\]$', domain_name):
         return flask.abort(404)
-    domain = models.Domain.query.get(domain_name) or \
-             models.Alternative.query.get(domain_name) or \
+    domain = models.db.session.get(models.Domain, domain_name) or \
+             models.db.session.get(models.Alternative, domain_name) or \
              flask.abort(404)
     return flask.jsonify(domain.name)
 
 
 @internal.route("/postfix/mailbox/<path:email>")
 def postfix_mailbox_map(email):
-    user = models.User.query.get(email) or flask.abort(404)
+    if _unsupported_address(email, require_mailbox=True):
+        return flask.abort(404)
+    user = models.db.session.get(models.User, email) or flask.abort(404)
     return flask.jsonify(user.email)
 
 
 @internal.route("/postfix/alias/<path:alias>")
 def postfix_alias_map(alias):
+    if _unsupported_address(alias):
+        return flask.abort(404)
     localpart, domain_name = models.Email.resolve_domain(alias)
     if localpart is None:
         return flask.jsonify(domain_name)
@@ -39,10 +61,10 @@ def postfix_alias_map(alias):
 
 @internal.route("/postfix/transport/<path:email>")
 def postfix_transport(email):
-    if email == '*' or re.match("(^|.*@)\[.*\]$", email):
+    if _unsupported_address(email) or email == '*' or re.match(r'(^|.*@)\[.*\]$', email):
         return flask.abort(404)
     _, domain_name = models.Email.resolve_domain(email)
-    relay = models.Relay.query.get(domain_name) or flask.abort(404)
+    relay = models.db.session.get(models.Relay, domain_name) or flask.abort(404)
     target = relay.smtp.lower()
     port = None
     use_lmtp = False
@@ -66,6 +88,9 @@ def postfix_transport(email):
             # invalid target (rest should be :port)
             flask.abort(400)
     else:
+        if target.count(':') > 1:
+            # invalid target (unbracketed IPv6 address, must be [host]:port)
+            flask.abort(400)
         if ':' in target:
             host, port = target.rsplit(':', 1)
         else:
@@ -125,21 +150,21 @@ def postfix_sender_map(sender):
 
     This is for bounces to come back the reverse path properly.
     """
-    if sender.count('@') > 1 or sender.startswith('"'):
-        return flask.abort(404)
     srs = srslib.SRS(flask.current_app.srs_key)
     domain = flask.current_app.config["DOMAIN"]
     try:
         localpart, domain_name = models.Email.resolve_domain(sender)
     except Exception as error:
         return flask.abort(404)
-    if models.Domain.query.get(domain_name):
+    if models.db.session.get(models.Domain, domain_name):
         return flask.abort(404)
     return flask.jsonify(srs.forward(sender, domain))
 
 
 @internal.route("/postfix/sender/login/<path:sender>")
 def postfix_sender_login(sender):
+    if _unsupported_address(sender):
+        return flask.abort(404)
     wildcard_senders = [s for s in flask.current_app.config.get('WILDCARD_SENDERS', '').lower().replace(' ', '').split(',') if s]
     localpart, domain_name = models.Email.resolve_domain(sender)
     if localpart is None:
@@ -147,7 +172,10 @@ def postfix_sender_login(sender):
     localpart = localpart[:next((i for i, ch in enumerate(localpart) if ch in flask.current_app.config.get('RECIPIENT_DELIMITER')), None)]
     destinations = set(models.Email.resolve_destination(localpart, domain_name, True) or [])
     destinations.update(wildcard_senders)
-    destinations.update(i[0] for i in models.User.query.filter_by(allow_spoofing=True).with_entities(models.User.email).all())
+    # allow_spoofing lets a user authenticate as other senders, but only within
+    # their own domain — scoping the lookup to the sender's domain prevents a
+    # domain manager from granting themselves cross-domain spoofing (#2686).
+    destinations.update(i[0] for i in models.User.query.filter_by(allow_spoofing=True, domain_name=domain_name).with_entities(models.User.email).all())
     if destinations:
         return flask.jsonify(",".join(idna_encode(destinations)))
     return flask.abort(404)
@@ -158,6 +186,8 @@ def postfix_sender_rate(sender):
     """
     if sender in flask.current_app.config['MESSAGE_RATELIMIT_EXEMPTION']:
         flask.abort(404)
+    if _unsupported_address(sender, require_mailbox=True):
+        return flask.abort(404)
     user = models.User.get(sender) or flask.abort(404)
     return flask.abort(404) if user.sender_limiter.hit() else flask.jsonify("450 4.2.1 You are sending too many emails too fast.")
 

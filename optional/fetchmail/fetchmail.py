@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import binascii
 import time
 import os
 from pathlib import Path
@@ -18,7 +19,7 @@ fetchmail -N \
     --idfile /data/fetchids --uidl \
     --pidfile /dev/shm/fetchmail.pid \
     --sslcertck --sslcertpath /etc/ssl/certs \
-    -f {}
+    {} -f {}
 """
 
 
@@ -32,16 +33,30 @@ poll "{host}" proto {protocol}  port {port}
     {lmtp}
 """
 
+def imaputf7encode(s):
+    """Encode a string into RFC2060 aka IMAP UTF7"""
+    out = ''
+    enc = ''
+    for c in s.replace('&','&-') + 'X':
+        if '\x20' <= c <= '\x7f':
+            if enc:
+                out += f'&{binascii.b2a_base64(enc.encode("utf-16-be")).rstrip(b"\n=").replace(b"/", b",").decode("ascii")}-'
+                enc = ''
+            out += c
+        else:
+            enc += c
+    return out[:-1]
 
 def escape_rc_string(arg):
     return "".join("\\x%2x" % ord(char) for char in arg)
 
 
-def fetchmail(fetchmailrc):
+def fetchmail(fetchmailrc, invisible):
     with tempfile.NamedTemporaryFile() as handler:
         handler.write(fetchmailrc.encode("utf8"))
         handler.flush()
-        command = FETCHMAIL.format(shlex.quote(handler.name))
+        invisible_flag = "--invisible " if invisible else ""
+        command = FETCHMAIL.format(invisible_flag, shlex.quote(handler.name))
         output = subprocess.check_output(command, shell=True)
         return output
 
@@ -52,15 +67,16 @@ def run(debug):
         for fetch in fetches:
             fetchmailrc = ""
             options = "options antispam 501, 504, 550, 553, 554"
-            options += " ssl" if fetch["tls"] else ""
+            if "FETCHMAIL_OPTIONS" in os.environ: options += f'{ os.environ["FETCHMAIL_OPTIONS"]}'
+            options += " ssl" if fetch["tls"] else " sslproto \'\'"
             options += " keep" if fetch["keep"] else " fetchall"
-            folders = "folders %s" % ((','.join('"' + item + '"' for item in fetch['folders'])) if fetch['folders'] else '"INBOX"')
+            folders = f"folders {",".join(f'"{imaputf7encode(item).replace('"',r"\34")}"' for item in fetch["folders"]) or '"INBOX"'}"
             fetchmailrc += RC_LINE.format(
                 user_email=escape_rc_string(fetch["user_email"]),
                 protocol=fetch["protocol"],
                 host=escape_rc_string(fetch["host"]),
                 port=fetch["port"],
-                smtphost=f'{os.environ["FRONT_ADDRESS"]}' if fetch['scan'] else f'{os.environ["FRONT_ADDRESS"]}/2525',
+                smtphost=f'{os.environ["HOSTNAMES"].split(",")[0]}' if fetch['scan'] and os.environ.get('PROXY_PROTOCOL_25', False) else f'{os.environ["FRONT_ADDRESS"]}' if fetch['scan'] else f'{os.environ["FRONT_ADDRESS"]}/2525',
                 username=escape_rc_string(fetch["username"]),
                 password=escape_rc_string(fetch["password"]),
                 options=options,
@@ -70,18 +86,12 @@ def run(debug):
             if debug:
                 print(fetchmailrc)
             try:
-                print(fetchmail(fetchmailrc))
+                print(fetchmail(fetchmailrc, fetch["invisible"]))
                 error_message = ""
             except subprocess.CalledProcessError as error:
                 error_message = error.output.decode("utf8")
                 # No mail is not an error
                 if not error_message.startswith("fetchmail: No mail"):
-                    print(error_message)
-                user_info = "for %s at %s" % (fetch["user_email"], fetch["host"])
-                # Number of messages seen is not a error as well
-                if ("messages" in error_message and
-                        "(seen " in error_message and
-                        user_info in error_message):
                     print(error_message)
             finally:
                 requests.post("http://{}:8080/internal/fetch/{}".format(os.environ['ADMIN_ADDRESS'],fetch['id']),

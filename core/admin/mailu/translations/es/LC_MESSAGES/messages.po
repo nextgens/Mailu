@@ -282,6 +282,10 @@ msgstr "Nombre de usuario"
 msgid "Keep emails on the server"
 msgstr "Mantener los correos en el servidor"
 
+#: mailu/ui/forms.py:200
+msgid "Keep original metadata"
+msgstr "Conservar metadatos originales"
+
 #: mailu/ui/forms.py:172
 msgid "Announcement subject"
 msgstr "Título del anuncio"
@@ -762,3 +766,22 @@ msgstr "Slots disponibles"
 #~ msgid "General settings"
 #~ msgstr "Configuración general"
 
+#: mailu/ui/templates/macros.html:105
+msgid "Search"
+msgstr "Buscar:"
+
+#: mailu/ui/templates/macros.html:106
+msgid "Show _MENU_ entries"
+msgstr "Mostrar _MENU_ registros"
+
+#: mailu/ui/templates/macros.html:107
+msgid "No matching records found"
+msgstr "No se encontraron resultados"
+
+#: mailu/ui/templates/macros.html:108
+msgid "Previous"
+msgstr "Anterior"
+
+#: mailu/ui/templates/macros.html:109
+msgid "Next"
+msgstr "Siguiente"

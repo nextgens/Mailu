@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import ipaddress
 import os
 import os.path
 import time
@@ -14,7 +15,12 @@ system.drop_privs_to('mailu')
 system.set_env(['SECRET'])
 
 os.system("flask mailu advertise")
-os.system("flask db upgrade")
+if os.system("flask db upgrade") != 0:
+    log.critical("Database migrations failed; refusing to start the admin service")
+    sys.exit(1)
+if os.system("flask mailu import-legacy-dkim-keys") != 0:
+    log.critical("Importing legacy DKIM keys failed; refusing to start the admin service")
+    sys.exit(1)
 
 account = os.environ.get("INITIAL_ADMIN_ACCOUNT")
 domain = os.environ.get("INITIAL_ADMIN_DOMAIN")
@@ -27,7 +33,7 @@ if account is not None and domain is not None and password is not None:
 
 def test_unsupported():
     import codecs
-    if os.path.isfile(codecs.decode('/.qbpxrerai', 'rot13')) or os.environ.get(codecs.decode('V_XABJ_ZL_FRGHC_QBRFAG_SVG_ERDHVERZRAGF_NAQ_JBAG_SVYR_VFFHRF_JVGUBHG_CNGPURF', 'rot13'), None):
+    if os.path.isfile(codecs.decode('/.qbpxrerai', 'rot13')) or os.environ.get(codecs.decode('V_XABJ_ZL_FRGHC_QBRFAG_SVG_ERDHVERZRAGF_NAQ_JBAG_SVYR_VFFHRF_JVGUBHG_CNGPURF', 'rot13'), None) or os.environ.get(codecs.decode('ZNVYH_URYZ_PUNEG', 'rot13'), None):
         return
     log.critical('Your system is not supported. Please start by reading the documentation and then http://www.catb.org/~esr/faqs/smart-questions.html')
     while True:
@@ -62,16 +68,32 @@ def test_DNS():
 test_DNS()
 test_unsupported()
 
+subnet = os.environ.get("SUBNET")
+forwarded_allow_networks = list(filter(None, [subnet, os.environ.get("SUBNET6")]))
+if subnet:
+    ipv4_network = ipaddress.ip_network(subnet)
+    if ipv4_network.version == 4:
+        forwarded_allow_networks.append(
+            str(ipaddress.ip_network(
+                f"::ffff:{ipv4_network.network_address}/{96 + ipv4_network.prefixlen}"
+            ))
+        )
+forwarded_allow_ips = ",".join(forwarded_allow_networks)
+
 cmdline = [
     "gunicorn",
-    "--threads", f"{os.cpu_count()}",
+    "--worker-class", "gthread",
+    "--threads", os.environ.get('CPU_COUNT', '1'),
     # If SUBNET6 is defined, gunicorn must listen on IPv6 as well as IPv4
     "-b", f"{'[::]' if os.environ.get('SUBNET6') else '0.0.0.0'}:8080",
     "--logger-class mailu.Logger",
     f"--log-level {os.environ.get('LOG_LEVEL', 'INFO')}",
     "--worker-tmp-dir /dev/shm",
     "--error-logfile", "-",
-    "--preload"
+    "--preload",
+    "--http-protocols", "h2,h1",
+    "--http2-cleartext", "both",
+    "--forwarded-allow-ips", forwarded_allow_ips
 ]
 
 # logging

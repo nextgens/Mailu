@@ -1,18 +1,19 @@
 const path = require('path');
-const webpack = require('webpack');
 const css = require('mini-css-extract-plugin');
 const mini = require('css-minimizer-webpack-plugin');
-const terse = require('terser-webpack-plugin');
 const compress = require('compression-webpack-plugin');
 
 module.exports = {
     mode: 'production',
     entry: {
         app: {
-            import: ['./assets/app.css', './assets/mailu.png', './assets/app.js'],
+            import: ['./assets/app.css', './assets/app.js'],
             dependOn: 'vendor',
         },
+        autoreply: { import: './assets/autoreply.js', dependOn: 'vendor' },
+        composer: { import: './assets/composer.js', dependOn: 'vendor' },
         vendor: './assets/vendor.js',
+        logo: './assets/mailu.png',
     },
     output: {
         path: path.resolve(__dirname, 'static/'),
@@ -22,16 +23,15 @@ module.exports = {
     module: {
         rules: [
             {
-                test: /\.js$/,
-                use: ['babel-loader', 'import-glob'],
-            },
-            {
                 test: /\.s?css$/i,
-                use: [css.loader, 'css-loader', 'sass-loader'],
-            },
-            {
-                test: /\.less$/i,
-                use: [css.loader, 'css-loader', 'less-loader'],
+                use: [css.loader, 'css-loader', {
+                    loader: 'sass-loader',
+                    // AdminLTE and Bootstrap still use deprecated Sass imports.
+                    options: { sassOptions: { silenceDeprecations: [
+                        'import', 'slash-div', 'color-functions', 'global-builtin',
+                        'abs-percent', 'if-function',
+                    ] } },
+                }],
             },
             {
                 test: /\.(json|png|svg|jpg|jpeg|gif)$/i,
@@ -43,11 +43,6 @@ module.exports = {
         new css({
             filename: '[name].css',
             chunkFilename: '[id].css',
-        }),
-        new webpack.ProvidePlugin({
-            $: 'jquery',
-            jQuery: 'jquery',
-            ClipboardJS: 'clipboard',
         }),
         new compress({
             filename: '[path][base].gz',
@@ -61,12 +56,13 @@ module.exports = {
     optimization: {
         minimize: true,
         minimizer: [
-            new terse(),
+            '...',
             new mini({
                 minimizerOptions: {
                     preset: [
                         'default', {
                             discardComments: { removeAll: true },
+                            svgo: false,
                         },
                     ],
                 },

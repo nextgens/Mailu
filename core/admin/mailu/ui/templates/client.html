@@ -9,6 +9,10 @@
 {%- endblock %}
 
 {%- block content %}
+<div class="alert alert-info" role="alert">
+  <p>{% trans %}Create a separate authentication token for each email app or device. Enter the token in the app's password field for both incoming (IMAP) and outgoing (SMTP) mail, and let the app remember it.{% endtrans %}</p>
+  <a class="btn btn-primary" href="{{ url_for('.token_create') }}">{% trans %}Create an authentication token{% endtrans %}</a>
+</div>
 {%- call macros.table(title=_("Incoming mail"), datatable=False) %}
   <tbody>
     <tr>
@@ -28,7 +32,7 @@
       <td><pre class="pre-config border bg-light">{{ current_user if current_user.is_authenticated else "******" }}</pre></td>
     </tr>
     <tr>
-      <th>{% trans %}Password{% endtrans %}</th>
+      <th>{% trans %}Authentication token{% endtrans %}</th>
       <td><pre class="pre-config border bg-light">*******</pre></td>
     </tr>
   </tbody>
@@ -53,7 +57,7 @@
       <td><pre class="pre-config border bg-light">{{ current_user if current_user.is_authenticated else "******" }}</pre></td>
     </tr>
     <tr>
-      <th>{% trans %}Password{% endtrans %}</th>
+      <th>{% trans %}Authentication token{% endtrans %}</th>
       <td><pre class="pre-config border bg-light">*******</pre></td>
     </tr>
   </tbody>
