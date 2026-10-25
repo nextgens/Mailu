@@ -15,7 +15,7 @@ queue_rules:
               - "#approved-reviews-by>=1"
           - "#approved-reviews-by>=2"
 
-  - name: 2024.06
+  - name: '2024.06'
     batch_size: 5
     merge_method: fast-forward
     queue_conditions:
@@ -76,7 +76,7 @@ pull_request_rules:
       - -label~=^(status/wip|status/blocked)$
     actions:
       queue:
-        name: 2024.06
+        name: '2024.06'
 
   - name: Backport to 2024.06 branch
     conditions:
