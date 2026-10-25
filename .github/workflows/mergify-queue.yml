@@ -1,0 +1,49 @@
+name: mergify-queue
+on:
+  pull_request:
+    branches:
+      - master
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+jobs:
+  derive-variables:
+    if: startsWith(github.head_ref, 'mergify/merge-queue/')
+    runs-on: ubuntu-latest
+    outputs:
+      docker_org: ${{ steps.owner.outputs.lowercase }}
+    steps:
+      - name: Convert repository owner to lowercase
+        id: owner
+        uses: ASzc/change-string-case-action@ecd1412d078f2e06e9eedcbaa6fcd988151c3f82 # v8
+        with:
+          string: ${{ github.repository_owner }}
+
+  build-test-deploy:
+    needs:
+      - derive-variables
+    uses: ./.github/workflows/build_test_deploy.yml
+    with:
+      architecture: 'linux/amd64,linux/arm64/v8,linux/arm/v7'
+      mailu_version: pr-${{ github.event.pull_request.number }}
+      pinned_mailu_version: ${{ github.event.pull_request.head.sha }}
+      docker_org: ghcr.io/${{ needs.derive-variables.outputs.docker_org }}
+      branch: master
+      deploy: 'true'
+      release: 'false'
+    secrets: inherit
+
+  ci-success:
+    name: CI-Done
+    if: always() && startsWith(github.head_ref, 'mergify/merge-queue/')
+    needs:
+      - derive-variables
+      - build-test-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm the build and tests succeeded
+        env:
+          BUILD_RESULT: ${{ needs.build-test-deploy.result }}
+        run: test "$BUILD_RESULT" = success

@@ -181,10 +181,24 @@ In the case of a PR from a fellow team member, a single review is enough
 to initiate merging. In all other cases, two approving reviews are required.
 There is also a possibility to set the ``review/need2`` to require a second review.
 
-After the Github Action workflow successfully tests the PR and the required amount of reviews are acquired,
-Mergify will trigger with a ``bors r+`` command. Bors will batch any approved PR's,
-merges them with master in a staging branch where the Github Action workflow builds and tests the result.
-After a successful test, the actual master gets fast-forwarded to that point.
+Mergify's merge queue adds eligible pull requests to an integration queue. It tests batches of up to five
+pull requests together with the latest ``master`` before fast-forwarding a successful batch. A pull request
+needs the required approvals and a successful ``CI-Done`` check before it can merge. The approval policy
+is one review for trusted authors, unless ``review/need2`` is set, and two reviews for everyone else.
+
+The merge queue creates a temporary draft pull request for each batch. Its GitHub Actions run builds and
+tests the combined changes and publishes test images to the GitHub Container Registry. To test an image,
+find the active draft pull request whose title begins with ``merge queue:`` and use its PR number:
+
+.. code-block:: bash
+
+  export DOCKER_ORG="ghcr.io/mailu"
+  export MAILU_VERSION="pr-<queue-pr-number>"
+  docker compose pull
+  docker compose up -d
+
+When a batch changes, Mergify rebuilds it. WIP pull requests and those with the ``status/wip`` or
+``status/blocked`` label stay out of the queue. Additional commits dismiss previous approvals, as before.
 
 System requirements
 ```````````````````
@@ -200,50 +214,22 @@ directory structure.
 Test images
 ```````````
 
-All PR's automatically get build by a Github Action workflow, controlled by `bors-ng`_.
-Some primitive auto testing is done.
-The resulting images get uploaded to the Github container registry, under the
-tag name ``ghcr.io/mailu/<name>:pr-<no>``.
-
-For example, to test PR #500 against master, reviewers can use:
-
-.. code-block:: bash
-
-  export DOCKER_ORG="ghcr.io/mailu"
-  export MAILU_VERSION="pr-500"
-  docker compose pull
-  docker compose up -d
-
-You can now test the PR. Play around. See if (external) mails work. Check for whatever functionality the PR is
-trying to fix. When happy, you can approve the PR. When running into failures, mark the review as
-"request changes" and try to provide as much as possible details on the failure.
-(Logs, error codes from clients etc).
-
-.. _`bors-ng`: https://bors.tech/documentation/
+Reviewers can test the images from the active Mergify queue batch as described above. Play around. See if
+(external) mails work. Check whatever functionality the PR is trying to fix. When happy, approve the original
+pull request. When running into failures, mark the review as "request changes" and provide as many details
+as possible (logs, error codes from clients, etc.).
 
 Additional commits
 ``````````````````
 
-On every new commit ``bors try`` is  run automatically. Past approvals get dismissed automatically.
-When doing a subsequent review on the same PR, be sure to pull the latest image from docker hub
-after Bors confirms a successful build.
+On every new commit, Mergify rebuilds the active queue batch. Past approvals are dismissed automatically.
+When doing a subsequent review on the same PR, be sure to pull the latest queue image before testing again.
 
-When bors try fails
-```````````````````
+When queue checks fail
+````````````````````````
 
-Sometimes the Github Action workflow fails when another PR triggers a ``bors try`` command,
-before the Github Action workflow cloned the git repository.
-Inspect the build log in the link provided by *bors-ng* to find out the cause.
-If you see something like the following error on top of the logs,
-feel free to write a comment with ``bors retry``.
-
-.. code-block:: bash
-
-  The command "git checkout -qf <hash>" failed and exited with 128 during .
-
-Please wait a few minutes to do so, so as not to interfere with other builds.
-Also, don't abuse this command if anything else goes wrong,
-the author needs to try to fix it instead!
+If queue checks fail, inspect the GitHub Actions run linked from the temporary draft pull request. Fixing the
+source pull request updates the batch and starts a fresh run.
 
 Reviewing by git
 ----------------

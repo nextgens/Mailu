@@ -1,41 +1,32 @@
+queue_rules:
+  - name: master
+    batch_size: 5
+    merge_method: fast-forward
+    queue_conditions:
+      - base=master
+      - -title~=(WIP|wip)
+      - -label~=^(status/wip|status/blocked)$
+    merge_conditions:
+      - check-success=CI-Done
+      - or:
+          - and:
+              - author~=^(mergify|kaiyou|muhlemmer|mildred|HorayNarea|hoellen|ofthesun9|Nebukadneza|micw|lub|Diman0|ghostwheel42|nextgens)$
+              - -label=review/need2
+              - "#approved-reviews-by>=1"
+          - "#approved-reviews-by>=2"
+
 pull_request_rules:
-
-  - name: Build testing images; trigger bors try
+  - name: Queue master PRs for integration testing
     conditions:
+      - base=master
+      - -draft
       - -title~=(WIP|wip)
       - -label~=^(status/wip|status/blocked)$
-      - -closed
-      - -merged
     actions:
-      comment:
-        message: |
-          Thanks for submitting this pull request.
-          Bors-ng will now build test images. When it succeeds, we will continue to review and test your PR.
+      queue:
+        name: master
 
-          bors try
-
-          Note: if this build fails, [read this](http://mailu.io/master/contributors/environment.html#when-bors-try-fails).
-
-  - name: 2 approved reviews; trigger bors r+
-    conditions:
-      - -title~=(WIP|wip)
-      - -label~=^(status/wip|status/blocked)$
-      - "#approved-reviews-by>=2"
-    actions:
-      comment:
-        message: bors r+
-
-  - name: Trusted author and 1 approved review; trigger bors r+
-    conditions:
-      - author~=^(mergify|kaiyou|muhlemmer|mildred|HorayNarea|hoellen|ofthesun9|Nebukadneza|micw|lub|Diman0|ghostwheel42|nextgens)$
-      - -title~=(WIP|wip)
-      - -label~=^(status/wip|status/blocked|review/need2)$
-      - "#approved-reviews-by>=1"
-    actions:
-      comment:
-        message: bors r+
-
-  - name: Backport to 2024.06  branch
+  - name: Backport to 2024.06 branch
     conditions:
       - base=master
       - label=type/backport
@@ -50,4 +41,3 @@ pull_request_rules:
     actions:
       dismiss_reviews:
         approved: True
-
