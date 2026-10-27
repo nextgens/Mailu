@@ -1,0 +1,1 @@
+Clean the Roundcube database whenever the webmail container starts.

@@ -150,6 +150,10 @@ def initialize_database(image_version_path="/version", marker_path="/data/.round
 supervisor.clean_environment()
 initialize_database()
 
+# Keep Roundcube's database tidy on every container start, including starts
+# where no database upgrade is needed.
+subprocess.check_call(["/var/www/roundcube/bin/cleandb.sh"], stderr=subprocess.STDOUT, preexec_fn=demote())
+
 # Configure nginx
 conf.jinja("/conf/nginx-webmail.conf", context, "/etc/nginx/http.d/webmail.conf")
 if os.path.exists("/var/run/nginx.pid"):
