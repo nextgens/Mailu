@@ -66,6 +66,9 @@ in your browser and shared between the admin GUI and sign-in page.
 
 Only global administrator users have access to all configuration settings and the Rspamd webgui. Other users will be
 presented with settings for only their account, and domains they are managers of.
+Global administrators and domain managers can use **Search addresses** in the
+Administration menu to find mailbox and alias addresses across the domains they
+manage. Select a result to open its management page.
 To create a user who is a global administrator for a new installation, the Mailu.env file can be adapted.
 For more information see the section 'Admin account - automatic creation' in :ref:`the configuration reference <admin_account>`.
 

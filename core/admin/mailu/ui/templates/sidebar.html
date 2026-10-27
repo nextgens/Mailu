@@ -90,6 +90,12 @@
           <p>{% trans %}Mail domains{% endtrans %}</p>
         </a>
       </li>
+      <li class="nav-item" role="none">
+        <a href="{{ url_for('.address_search') }}" class="nav-link" role="menuitem">
+          <i class="nav-icon fa-solid fa-magnifying-glass"></i>
+          <p>{% trans %}Search addresses{% endtrans %}</p>
+        </a>
+      </li>
       {%- endif %}
       {%- if current_user.global_admin %}
       <li class="nav-item" role="none">

@@ -27,6 +27,29 @@ def domain_list():
         user_counts=user_counts, alias_counts=alias_counts)
 
 
+@ui.route('/address/search', methods=['GET'])
+@access.authenticated
+def address_search():
+    """Search mailbox and alias addresses across domains the actor manages."""
+    term = flask.request.args.get('q', '').strip()
+    domain_names = [domain.name for domain in flask_login.current_user.get_managed_domains()]
+    users = []
+    aliases = []
+    if term and domain_names:
+        escaped_term = term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        pattern = f'%{escaped_term}%'
+        users = (models.User.query
+            .filter(models.User.domain_name.in_(domain_names))
+            .filter(models.User.email.ilike(pattern, escape='\\'))
+            .order_by(models.User.email).limit(100).all())
+        aliases = (models.Alias.query
+            .filter(models.Alias.domain_name.in_(domain_names))
+            .filter(models.Alias.email.ilike(pattern, escape='\\'))
+            .order_by(models.Alias.email).limit(100).all())
+    return flask.render_template('address/search.html',
+        term=term, users=users, aliases=aliases)
+
+
 @ui.route('/domain/create', methods=['GET', 'POST'])
 @access.global_admin
 def domain_create():

@@ -1,0 +1,51 @@
+{%- extends "base.html" %}
+
+{%- block title %}
+{% trans %}Search addresses{% endtrans %}
+{%- endblock %}
+
+{%- block content %}
+<div class="row">
+  <div class="col-lg-8">
+    <form method="get" action="{{ url_for('.address_search') }}" class="card card-outline card-primary mb-4">
+      <div class="card-body">
+        <label for="address-query" class="form-label">{% trans %}Mailbox or alias address{% endtrans %}</label>
+        <div class="input-group">
+          <input id="address-query" name="q" type="search" class="form-control" value="{{ term }}" autofocus>
+          <button class="btn btn-primary" type="submit"><i class="fa-solid fa-magnifying-glass"></i> {% trans %}Search{% endtrans %}</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if term %}
+<h2 class="h4">{% trans %}Mailboxes{% endtrans %}</h2>
+{% if users %}
+<ul class="list-group mb-4">
+  {% for user in users %}
+  <li class="list-group-item d-flex justify-content-between align-items-center">
+    <span><i class="fa-regular fa-envelope me-2" aria-hidden="true"></i>{{ user.email }} <small class="text-body-secondary">{{ user.domain.name }}</small></span>
+    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('.user_edit', user_email=user.email) }}">{% trans %}Manage{% endtrans %}</a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-body-secondary">{% trans %}No matching mailboxes.{% endtrans %}</p>
+{% endif %}
+
+<h2 class="h4">{% trans %}Aliases{% endtrans %}</h2>
+{% if aliases %}
+<ul class="list-group mb-4">
+  {% for alias in aliases %}
+  <li class="list-group-item d-flex justify-content-between align-items-center">
+    <span><i class="fa-solid fa-at me-2" aria-hidden="true"></i>{{ alias.email }} <small class="text-body-secondary">{{ alias.domain.name }}</small></span>
+    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('.alias_edit', alias=alias.email) }}">{% trans %}Manage{% endtrans %}</a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-body-secondary">{% trans %}No matching aliases.{% endtrans %}</p>
+{% endif %}
+{% endif %}
+{%- endblock %}
