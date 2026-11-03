@@ -1,5 +1,10 @@
 # syntax=docker/dockerfile-upstream:1.4.3
 
+# The embedding model is distributed as a separate, immutable OCI artifact so
+# it does not add a 127 MiB binary to the Mailu Git repository.
+ARG FASTTEXT_MODEL_IMAGE=ghcr.io/nextgens/mailu/fasttext-en-fr32:en-fr-32d-dsub2
+FROM ${FASTTEXT_MODEL_IMAGE} AS fasttext_model
+
 # rspamd image
 FROM base
 
@@ -9,7 +14,14 @@ LABEL version=$VERSION
 RUN set -euxo pipefail \
   ; apk add --no-cache rspamd rspamd-controller rspamd-fuzzy rspamd-proxy \
   ; mkdir /run/rspamd \
+  ; mkdir -p /usr/share/rspamd/fasttext \
   ; mkdir /overrides
+
+COPY --from=fasttext_model /cc.en.32.direct300.dsub2.ftz /usr/share/rspamd/fasttext/cc.en.32.direct300.dsub2.ftz
+COPY --from=fasttext_model /cc.fr.32.direct300.dsub2.ftz /usr/share/rspamd/fasttext/cc.fr.32.direct300.dsub2.ftz
+
+RUN echo '700f5d75fd3fc6a41eae6a44f9a41b91b7f95bf0d7a9d844732a12526bb6f3b0  /usr/share/rspamd/fasttext/cc.en.32.direct300.dsub2.ftz' | sha256sum -c -
+RUN echo '35059058a983ee80a1aaacc748f85f2b3a43dedd6da433eee1ec13ff8c9ec91f  /usr/share/rspamd/fasttext/cc.fr.32.direct300.dsub2.ftz' | sha256sum -c -
 
 # TEMPORARY PATCH -- remove this comment and the RUN block below, nothing else.
 #
