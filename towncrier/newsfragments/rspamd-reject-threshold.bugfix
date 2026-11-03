@@ -1,0 +1,1 @@
+Lower Mailu's default Rspamd reject threshold from 15 to 8. The spam-folder tolerance remains on its existing 0–15 scale.

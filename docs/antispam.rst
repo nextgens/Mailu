@@ -8,9 +8,9 @@ How does spam filtering work in Mailu?
 
 Mailu uses Rspamd for spam filtering. Rspamd is a Fast, free and open-source spam filtering system.
 
-Rspamd rejects non-compliant email messages and email messages that contain viruses. In Mailu Rspamd uses a scoring scale from 0 to 15. The following values are the default values, and can be changed inside the Rspamd WebUI under the tab configuration:
+Rspamd rejects non-compliant email messages and email messages that contain viruses. It adds up scores from its checks and compares the result with configured action thresholds. Mailu's default thresholds can be changed inside the Rspamd WebUI under the configuration tab:
 
-* Email messages with a score of 15 or higher will be rejected.
+* Email messages with a score of 8 or higher will be rejected.
 
 * Email messages with a score of 6 or higher will receive a header with the spam score.
 
@@ -28,10 +28,10 @@ Rspamd's rejection thresholds remain configurable in the Rspamd WebUI. Lowering
 the spam rejection threshold causes more high-scoring messages to be quarantined
 instead of being accepted for delivery.
 
-1. When an email message is received or send by Postfix, it is scanned by Rspamd. If the email message receives a spam score between 6 and 15, a header is added to the email message with the spam score. This is an example of an email header for a spam score of 14::
+1. When an email message is received or sent by Postfix, it is scanned by Rspamd. If it receives a spam score of 6 or higher and is not rejected, Rspamd adds spam headers. This is an example of an email header for a spam score of 7::
 
-    X-Spamd-Bar: ++++++++++++++
-    X-Spam-Level: **************
+    X-Spamd-Bar: +++++++
+    X-Spam-Level: *******
     Authentication-Results: test.mailu.io;
        dkim=pass header.d=example.com header.s=mailing header.b=ABCDE;
        dkim=pass header.d=example.com header.s=mailing header.b=ABCDE;
@@ -41,17 +41,17 @@ instead of being accepted for delivery.
 
 2. Dovecot is then responsible for classifying the email message to the Junk folder based on user preferences. It works as following:
 
-   * In the administration web interface, under settings under Antispam 'Enable spam filter' must be ticked. If this option is disabled, then all email messages will automatically go to the inbox folder. Except for email messages with a score of 15 or higher, as these email messages are rejected by Rspamd.
+   * In the administration web interface, under settings under Antispam 'Enable spam filter' must be ticked. If this option is disabled, then all delivered email messages will automatically go to the inbox folder. Messages with a score of 8 or higher are rejected by Rspamd before delivery.
 
    * In the administration web interface, under settings under Antispam, the user defined spam filter tolerance must be configured. The default value is 80%. The lower the spam filter tolerance, the more false positives (ham classified as spam). The user can change this setting to fine-tune when an email message is classified as spam.
 
-   * Dovecot extracts the X-Spam-Level email header from the email message and converts the spam score (0 - 15) to a 0 - 100 percent scale. This spam score is compared with the user defined spam filter tolerance. If the spam score is lower than the user defined spam filter tolerance, then the email message is accepted. In logic:
+   * Dovecot extracts the X-Spam-Level email header and maps its value using a maximum score of 15 to a 0 - 100 percent scale. This delivery-time spam score is compared with the user defined spam filter tolerance. The maximum of 15 is independent of Rspamd's reject threshold. If the spam score is lower than the user defined spam filter tolerance, then the email message is accepted. In logic:
 
      If <spam_score in percent> is greater than <spam filter tolerance>, then move the email message to the spam folder and mark the email message as read.
 
-   For example if the user defined spam filter tolerance is set to 80%(default) and the spam score of an email message is 10:
+   For example, if the user defined spam filter tolerance is set to 80% (the default) and a delivered email has a spam score of 7:
 
-   66% (10/15) is less than 80%, so the email is classified as ham. This email message will go to the inbox folder. If the user wants email messages with a score of 10 (66%) to be classified as spam, then the user defined spam filter tolerance can be lowered to 65% in the administration web interface.
+   47% (7/15) is less than 80%, so the email is classified as ham and goes to the inbox. To classify a delivered score of 7 as spam, lower the user defined spam filter tolerance below 47% in the administration web interface.
 
    The default spam filter tolerance used for new users can be configured using the environment variable ``DEFAULT_SPAM_THRESHOLD``. See also :ref:`common_cfg` in the configuration reference.
 
@@ -83,6 +83,219 @@ Likewise, to learn all messages within the folder ``Spam_Learn`` as spam message
   rspamc -h antispam:11334 -P mailu learn_spam /mail/user\@example.com/.Spam_Learn/cur/
 
 *Issue reference:* `1438`_.
+
+Experimental bilingual FastText neural classifier
+--------------------------------------------------
+
+The experimental Rspamd profile uses the standard Alpine Rspamd package and
+content embeddings only. It applies the 32-dimensional English and French
+models to every message (``multi_model = true``), then uses mean/max pooling.
+The input has 128 values per message: 2 languages x 32 dimensions x 2 pools.
+Rspamd symbols and metatokens are explicitly excluded with
+``disable_symbols_input = true`` and ``fusion.include_meta = false``. No symbol
+whitelist is required for this profile. Both ``NEURAL_FASTTEXT_SPAM`` and
+``NEURAL_FASTTEXT_HAM`` are configured with zero metric weight; the neural
+signal therefore cannot change the existing Rspamd score or action.
+
+The tested English and French models occupy 127.1 MiB and 128.7 MiB on disk.
+On the ARM64 Rspamd 4.0.1 test stack their mapped PSS was 127.1 MiB and
+128.7 MiB in the process that handled scans. The latest balanced test ANN
+payload was 39,598 bytes compressed. This test used 32-dimensional models
+because the standard Mailu Rspamd package has no BLAS support for
+``max_inputs``/PCA; no Rspamd source was compiled or patched.
+
+The Dovecot Junk-folder learning scripts now make an additional normal Rspamd
+scan carrying the ``ANN-Train`` HTTP header, alongside the existing
+``learn_spam`` / ``learn_ham`` commands. This gives the neural module an
+explicit correction label while keeping the existing Bayes and fuzzy learning
+operations. Rspamd handles this label on scan requests; the header is not
+attached to the special Bayes learn endpoint. See the `neural module documentation
+<https://docs.rspamd.com/modules/neural/>`_.
+
+Image and deployment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The experimental images are published for AMD64 and ARM64. The English and
+French FastText models are distributed together as a separate OCI artifact so
+the large binaries do not enter the Mailu source repository. The Rspamd image
+copies both into ``/usr/share/rspamd/fasttext``. The published tags are:
+
+* ``ghcr.io/nextgens/mailu/rspamd:neural-content-en32-fr32``
+* ``ghcr.io/nextgens/mailu/dovecot:neural-content-en32-fr32``
+* ``ghcr.io/nextgens/mailu/fasttext-en-fr32:en-fr-32d-dsub2``
+
+The Dovecot image carries the updated IMAPSieve learning scripts. Once the
+production Compose configuration selects these tags, pull and recreate the two
+services from the directory containing the Compose file:
+
+.. code-block:: bash
+
+  docker compose pull antispam imap
+  docker compose up -d antispam imap
+
+Keep the existing Redis volume: it holds the neural vectors and trained ANN
+across container recreation. The model files are part of the Rspamd image, so
+upgrading or rolling back that image also changes the embeddings. The ANN is
+keyed by its Rspamd rule/profile and the symbols selected for that profile.
+In Rspamd 4.0.1, FastText model paths and ``multi_model`` are not included in
+the provider digest. If changing those settings changes the input features,
+use a distinct neural rule prefix and train a fresh profile instead of
+assuming Rspamd will isolate the old vectors automatically.
+
+Confirm that the Rspamd container is healthy, run
+``docker compose exec antispam rspamadm configtest``, and check its logs for
+the EN32 and FR32 model loading messages. The network will have no ANN until enough
+explicitly labeled vectors have been trained; zero metric weights keep it
+inert even after training.
+
+The default zero weights are deliberately inert. Once a trained ANN is
+available and you are ready to measure its additive impact, create
+``/mailu/overrides/rspamd/metrics.conf`` with the tested experimental weights:
+
+.. code-block:: none
+
+  symbols {
+      "NEURAL_FASTTEXT_SPAM" { weight = 5.0; }
+      "NEURAL_FASTTEXT_HAM" { weight = -5.0; }
+  }
+
+Restart the ``antispam`` service to apply the override, collect the paired
+full-ham scores, and remove the override to return to zero-weight behavior.
+Do not change the action thresholds as part of this first comparison.
+
+Evaluating on a full ham set
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For a valid false-positive measurement, keep the ham messages being evaluated
+out of neural training. Split by message/thread or campaign where possible,
+not only by filename. Make a manifest containing one known-ham message path
+per line. Paths in the manifest must be visible inside the Dovecot container,
+for example ``/mail/user@example.com/cur/message-file``; copy the manifest
+into that container, then run a scan (not a learn command):
+
+.. code-block:: bash
+
+  docker compose cp /tmp/ham-files.txt imap:/tmp/ham-files.txt
+  docker compose exec -T imap rspamc --json --files-list /tmp/ham-files.txt \
+    -h antispam:11334 > ham-scan.jsonl
+
+Count ham as a false positive when its final score meets/exceeds the configured
+``required_score`` (or Rspamd returns the configured spam action). Report the
+count as well as the rate: one false positive in 302 ham messages is 0.331%,
+so this test set cannot establish a 0.1% rate. Save the manifest and scan
+output so the same full ham set can be compared against rules-only and neural
+configurations. One way to count threshold-crossing messages in the JSONL
+output is ``jq -s '[.[] | select(.score >= .required_score)] | length'``.
+First scan with the shipped zero weights and save the results. After training,
+apply the temporary ±5 ``metrics.conf`` override, rescan the exact same
+manifest, and compare scores and actions. A normal ``rspamc`` scan evaluates
+the message but does not label it for neural training.
+
+Training and retraining
+~~~~~~~~~~~~~~~~~~~~~~~
+
+For initial evaluation, train only on a separate labeled subset, with roughly
+balanced spam and ham examples. Then scan the held-out ham manifest above.
+With ``max_trains = 25`` and balanced learning, Rspamd starts training after
+each class reaches the configured minimum (about 25 vectors with the default
+class bias); training runs asynchronously on the primary Rspamd controller.
+Training vectors are Redis sets, so exact duplicate feature vectors collapse:
+balanced message counts do not guarantee balanced vector counts. Check the
+``SCARD`` of both class sets as well as the raw message counts. The balanced
+mode is an eligibility check; it does not downsample the larger class. Wait for
+the ANN profile to appear before measuring. Redis is the authoritative neural
+state; back it up and persist it with the normal Mailu Redis volume.
+
+To bulk-train the neural network without changing Bayes, scan balanced labeled
+training manifests with the same header used by the IMAPSieve scripts. Do not
+use the ``learn_ham`` / ``learn_spam`` command for this initial neural-only
+training pass because those commands also update Bayes:
+
+.. code-block:: bash
+
+  docker compose cp /tmp/ham-train-files.txt imap:/tmp/ham-train-files.txt
+  docker compose cp /tmp/spam-train-files.txt imap:/tmp/spam-train-files.txt
+  docker compose exec -T imap rspamc -h antispam:11334 -P mailu \
+    --header='ANN-Train: ham' --files-list /tmp/ham-train-files.txt
+  docker compose exec -T imap rspamc -h antispam:11334 -P mailu \
+    --header='ANN-Train: spam' --files-list /tmp/spam-train-files.txt
+
+The initial lists should be approximately balanced and exclude the ham set
+being evaluated. The network starts training after at least 25 vectors from
+each class; the controller trains asynchronously. Check Rspamd logs and Redis
+set counts, and wait for the ANN profile before scanning the held-out set.
+Automatic training is enabled: Rspamd may also collect vectors from messages
+that receive a spam/junk or ham verdict. The explicit Dovecot ``ANN-Train``
+labels continue to capture user corrections.
+Redis distinguishes a neural *profile index* from the individual ANN model
+versions stored in that index. The newest entry in the configured profile is
+the model used for inference; older version keys are not additional models
+that each message is evaluated against. Inspect profile indexes and the
+versions in this rule's index with:
+
+.. code-block:: bash
+
+  docker compose exec -T redis redis-cli --scan --pattern '*NEURAL*'
+  docker compose exec -T redis redis-cli --raw ZREVRANGE rn3_NEURAL_FASTTEXT_3_default 0 -1
+
+The profile index name can vary with the Rspamd rule and plugin version. Check
+the returned JSON ``redis_key`` to identify its newest model, and use
+``SCARD`` on the corresponding ``_ham_set`` and ``_spam_set`` keys to inspect
+training counts. Do not interpret older model versions as other profiles or
+delete Redis keys by a broad pattern. After training completes, restart
+``antispam`` once before held-out scans so the controller reloads the
+persisted ANN provider digest; scanning immediately in the process that
+trained the model can temporarily produce no neural symbols.
+Manual ``ANN-Train`` labels are explicit operator labels and bypass the normal
+automatic vector-admission limits. The model still needs the configured
+minimum from both classes, and duplicate vectors still collapse in Redis, so
+do not scan a large, unbalanced ham archive with that header. The updated Dovecot scripts send both the existing
+``learn_ham`` / ``learn_spam`` request and a separate normal scan with an
+``ANN-Train`` label, so live user corrections continue to update Bayes and
+also train the neural classifier. Keep a backup of Redis
+before bulk learning. Training vectors and the trained ANN are stored in
+Redis; persist and back up that volume with the normal Mailu state. Do not
+delete Redis keys by pattern to force retraining. To compare against a fresh
+model, use a separate Redis instance/volume and train it with a selected
+balanced training set.
+
+Troubleshooting mixed feature dimensions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The neural trainer expects every stored vector in a profile to have the same
+length. A training failure in ``compute_zscore_stats`` with
+``attempt to perform arithmetic on a nil value`` can indicate that vectors
+with different feature layouts were mixed. It is not, by itself, evidence of
+score saturation. Inspect the effective rule with
+``rspamadm configdump neural`` and confirm that the FastText provider and
+intended fusion settings are present. Then inspect the dimensions of the
+stored vectors for both classes before retrying.
+
+Rspamd's ``override.d`` has higher priority than ``local.d`` and replaces the
+matching rule. A temporary override containing only
+``rules.NEURAL_FASTTEXT.train.store_set_only`` can therefore remove the
+provider and fusion configuration while collecting examples. In the test
+stack this produced 128-value embedding vectors alongside 602-value
+symbol-only vectors, and training failed during z-score normalization. When
+temporarily freezing training, preserve the complete rule in the override and
+change only ``store_set_only``. Run ``rspamadm configtest`` and inspect
+``rspamadm configdump neural`` before importing messages. If incompatible
+vectors are already stored, keep the trained ANN untouched, remove only the
+verified incompatible training sets for the active profile, then recollect a
+balanced batch under one unchanged configuration.
+
+With the complete rule preserved, the test stack collected 235 unique vectors
+per class (from 250 labeled messages per class); all 470 vectors had 128
+features and Rspamd trained a new ANN version successfully. The difference
+between message counts and vector counts is expected because Redis sets
+deduplicate identical feature vectors. This is a test result, not a
+production false-positive or accuracy measurement.
+
+The experimental integration does not alter Mailu action thresholds or the
+Bayes/fuzzy configuration. Before production use, compare full-ham scan
+results with the neural image disabled and enabled, inspect false positives,
+and adjust the neural group weights through a Rspamd metrics override only
+after reviewing those paired results.
 
 .. _antispam_howto_block:
 
