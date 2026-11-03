@@ -1,0 +1,2 @@
+Give FastText ham predictions a negative metric weight so they lower the
+Rspamd score instead of increasing it.
