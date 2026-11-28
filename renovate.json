@@ -10,6 +10,38 @@
   "branchConcurrentLimit": 1,
   "groupName": "all dependencies",
   "rebaseWhen": "behind-base-branch",
+  "packageRules": [
+    {
+      "matchPackageNames": ["roundcube/roundcubemail"],
+      "allowedVersions": "1.6.x"
+    }
+  ],
+  "docker-compose": {
+    "ignorePaths": [
+      "**/node_modules/**",
+      "**/bower_components/**",
+      "**/vendor/**",
+      "**/examples/**",
+      "**/__tests__/**",
+      "**/test/**",
+      "**/__fixtures__/**",
+      "**/.mise/locks/**",
+      "**/.config/mise/locks/**"
+    ]
+  },
+  "pip_requirements": {
+    "ignorePaths": [
+      "**/node_modules/**",
+      "**/bower_components/**",
+      "**/vendor/**",
+      "**/examples/**",
+      "**/__tests__/**",
+      "**/test/**",
+      "**/__fixtures__/**",
+      "**/.mise/locks/**",
+      "**/.config/mise/locks/**"
+    ]
+  },
   "customManagers": [
     {
       "customType": "regex",
@@ -41,6 +73,14 @@
       "matchStrings": ["ghcr\\.io/renovatebot/renovate:(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
       "depNameTemplate": "ghcr.io/renovatebot/renovate",
       "datasourceTemplate": "docker",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/core/base/Dockerfile$/"],
+      "matchStrings": ["ARG SNUFFLEUPAGUS_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "jvoisin/snuffleupagus",
+      "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver"
     }
   ]
