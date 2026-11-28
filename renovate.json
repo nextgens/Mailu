@@ -1,0 +1,39 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "timezone": "Europe/Paris",
+  "schedule": ["every weekend"],
+  "prConcurrentLimit": 1,
+  "branchConcurrentLimit": 1,
+  "groupName": "all dependencies",
+  "rebaseWhen": "behind-base-branch",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/webmails\\/Dockerfile$/"],
+      "matchStrings": ["ENV ROUNDCUBE_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "roundcube/roundcubemail",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/webmails\\/Dockerfile$/"],
+      "matchStrings": ["ENV CARDDAV_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "mstilkerich/rcmcarddav",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/webmails\\/Dockerfile$/"],
+      "matchStrings": ["ENV SNAPPYMAIL_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "the-djmaze/snappymail",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    }
+  ]
+}
