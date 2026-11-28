@@ -95,7 +95,7 @@ services:
 
   # Optional services
   antivirus:
-    image: clamav/clamav-debian:1.4_base
+    image: clamav/clamav-debian:1.5.5_base
     restart: always
     logging:
       driver: journald

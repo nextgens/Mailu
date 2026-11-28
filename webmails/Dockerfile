@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile-upstream:1.4.3
+# syntax=docker/dockerfile-upstream:1.29.0
 
 FROM base
 
@@ -33,9 +33,9 @@ RUN set -euxo pipefail \
   ; mkdir -p /run/nginx /conf
 
 # roundcube
-ENV ROUNDCUBE_VERSION=1.6.21
+ENV ROUNDCUBE_VERSION=1.6.22
 ENV ROUNDCUBE_URL=https://github.com/roundcube/roundcubemail/releases/download/${ROUNDCUBE_VERSION}/roundcubemail-${ROUNDCUBE_VERSION}-complete.tar.gz
-ENV CARDDAV_VERSION=5.1.3
+ENV CARDDAV_VERSION=5.1.5
 ENV CARDDAV_URL=https://github.com/mstilkerich/rcmcarddav/releases/download/v${CARDDAV_VERSION}/carddav-v${CARDDAV_VERSION}.tar.gz
 
 RUN --mount=type=secret,id=github_token,required=false set -euxo pipefail \
@@ -73,7 +73,7 @@ COPY roundcube/config/config.inc.carddav.php /conf/
 
 # snappymail
 
-ENV SNAPPYMAIL_VERSION=3.0.0
+ENV SNAPPYMAIL_VERSION=3.1.4
 ENV SNAPPYMAIL_URL=https://github.com/the-djmaze/snappymail/releases/download/v${SNAPPYMAIL_VERSION}/snappymail-${SNAPPYMAIL_VERSION}.tar.gz
 
 RUN --mount=type=secret,id=github_token,required=false set -euxo pipefail \

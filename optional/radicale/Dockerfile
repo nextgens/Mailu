@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile-upstream:1.4.3
+# syntax=docker/dockerfile-upstream:1.29.0
 
 # webdav image
 FROM base
