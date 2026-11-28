@@ -33,8 +33,10 @@ RUN set -euxo pipefail \
   ; mkdir -p /run/nginx /conf
 
 # roundcube
-ENV ROUNDCUBE_URL=https://github.com/roundcube/roundcubemail/releases/download/1.6.21/roundcubemail-1.6.21-complete.tar.gz
-ENV CARDDAV_URL=https://github.com/mstilkerich/rcmcarddav/releases/download/v5.1.3/carddav-v5.1.3.tar.gz
+ENV ROUNDCUBE_VERSION=1.6.21
+ENV ROUNDCUBE_URL=https://github.com/roundcube/roundcubemail/releases/download/${ROUNDCUBE_VERSION}/roundcubemail-${ROUNDCUBE_VERSION}-complete.tar.gz
+ENV CARDDAV_VERSION=5.1.3
+ENV CARDDAV_URL=https://github.com/mstilkerich/rcmcarddav/releases/download/v${CARDDAV_VERSION}/carddav-v${CARDDAV_VERSION}.tar.gz
 
 RUN --mount=type=secret,id=github_token,required=false set -euxo pipefail \
   ; set +x \
@@ -71,7 +73,8 @@ COPY roundcube/config/config.inc.carddav.php /conf/
 
 # snappymail
 
-ENV SNAPPYMAIL_URL=https://github.com/the-djmaze/snappymail/releases/download/v3.0.0/snappymail-3.0.0.tar.gz
+ENV SNAPPYMAIL_VERSION=3.0.0
+ENV SNAPPYMAIL_URL=https://github.com/the-djmaze/snappymail/releases/download/v${SNAPPYMAIL_VERSION}/snappymail-${SNAPPYMAIL_VERSION}.tar.gz
 
 RUN --mount=type=secret,id=github_token,required=false set -euxo pipefail \
   ; set +x \
