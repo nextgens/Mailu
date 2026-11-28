@@ -34,6 +34,14 @@
       "depNameTemplate": "the-djmaze/snappymail",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github\\/workflows\\/renovate\\.yml$/"],
+      "matchStrings": ["renovate-version: (?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "ghcr.io/renovatebot/renovate",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "semver"
     }
   ]
 }
