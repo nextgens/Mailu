@@ -1,5 +1,5 @@
 # Convert .rst files to .html in temporary build container
-FROM python:3.14.7-alpine3.24 AS build
+FROM python:3.15.2-alpine3.24 AS build
 
 ARG version=master
 ENV VERSION=$version
@@ -40,7 +40,7 @@ RUN --mount=type=secret,id=github_token,required=false set -euxo pipefail \
 
 
 # Build nginx deployment image including generated html
-FROM nginx:1.31.9-alpine
+FROM nginx:1.31.10-alpine
 
 # TODO: Remove or reconsider this upgrade once cached Python and libexpat stay
 # aligned; the cached Python build can fail importing pyexpat in Supervisor.

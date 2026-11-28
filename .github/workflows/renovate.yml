@@ -43,4 +43,4 @@ jobs:
             -e RENOVATE_TOKEN \
             -e RENOVATE_REPOSITORIES \
             -e LOG_LEVEL \
-            ghcr.io/renovatebot/renovate:44.263.6
+            ghcr.io/renovatebot/renovate:44.264.1

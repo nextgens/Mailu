@@ -1,7 +1,7 @@
-# syntax=docker/dockerfile-upstream:1.4.3
+# syntax=docker/dockerfile-upstream:1.29.0
 
 # The output is static, so arm/v7 can use Node on the builder's supported platform.
-FROM --platform=$BUILDPLATFORM node:26.10.0-alpine3.24
+FROM --platform=$BUILDPLATFORM node:26.13.1-alpine3.24
 
 WORKDIR /work
 

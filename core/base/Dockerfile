@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile-upstream:1.4.3
+# syntax=docker/dockerfile-upstream:1.29.0
 
 # base system image (intermediate)
 # When updating this tag, first mirror it with .github/workflows/mirror.yml.
